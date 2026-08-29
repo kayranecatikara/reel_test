@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Talon Uçuş El Kitabı</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --kagit:#eef1f4; --yuzey:#ffffff; --yuzey2:#e4e9ee;
+  --murekkep:#131a22; --gri:#4d5a68; --sonuk:#75838f;
+  --cizgi:#cdd6de; --cizgi2:#b6c2cd;
+  --mavi:#1f6fa8; --mavi-zemin:#e2edf5;
+  --tehlike:#b3341f; --tehlike-zemin:#f8e6e2;
+  --uyari:#8a6008; --uyari-zemin:#f7eeda;
+  --olur:#2c7a4b; --olur-zemin:#e2f0e8;
+  --golge:0 1px 2px rgba(19,26,34,.06), 0 6px 18px rgba(19,26,34,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --kagit:#0e1319; --yuzey:#161d25; --yuzey2:#1d262f;
+    --murekkep:#dce4ec; --gri:#9aa8b5; --sonuk:#74838f;
+    --cizgi:#2a3540; --cizgi2:#3a4854;
+    --mavi:#6fb3e0; --mavi-zemin:#12293a;
+    --tehlike:#f08a72; --tehlike-zemin:#331612;
+    --uyari:#e0ac4a; --uyari-zemin:#302209;
+    --olur:#66c191; --olur-zemin:#102a1d;
+    --golge:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --kagit:#0e1319; --yuzey:#161d25; --yuzey2:#1d262f;
+  --murekkep:#dce4ec; --gri:#9aa8b5; --sonuk:#74838f;
+  --cizgi:#2a3540; --cizgi2:#3a4854;
+  --mavi:#6fb3e0; --mavi-zemin:#12293a;
+  --tehlike:#f08a72; --tehlike-zemin:#331612;
+  --uyari:#e0ac4a; --uyari-zemin:#302209;
+  --olur:#66c191; --olur-zemin:#102a1d;
+  --golge:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--kagit); color:var(--murekkep);
+  font:400 16.5px/1.65 "Source Serif 4",Georgia,serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.etiket,th,nav,.rozet,.kod{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+/* ---------- kabuk ---------- */
+.kabuk{max-width:1240px;margin:0 auto;padding:0 22px}
+.dizilim{display:grid;grid-template-columns:232px minmax(0,1fr);gap:52px;align-items:start}
+@media(max-width:960px){.dizilim{grid-template-columns:1fr;gap:0}}
+
+/* ---------- başlık ---------- */
+header{border-bottom:1px solid var(--cizgi);background:var(--yuzey);
+  box-shadow:var(--golge)}
+.bas{padding:44px 0 34px}
+.ustetiket{font:600 11px/1 Archivo,sans-serif;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--mavi);margin-bottom:15px}
+h1{font:700 clamp(34px,5.4vw,52px)/1.04 Archivo,sans-serif;margin:0 0 12px;
+  letter-spacing:-.022em;text-wrap:balance}
+.altbas{font-size:19px;color:var(--gri);max-width:62ch;margin:0}
+
+.durum{display:flex;flex-wrap:wrap;gap:9px;margin-top:24px}
+.rozet{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;
+  border-radius:3px;font:600 11.5px/1.5 Archivo,sans-serif;letter-spacing:.05em;
+  text-transform:uppercase;border:1px solid transparent}
+.rozet.ok{background:var(--olur-zemin);color:var(--olur);border-color:var(--olur)}
+.rozet.yok{background:var(--tehlike-zemin);color:var(--tehlike);border-color:var(--tehlike)}
+.rozet.bilgi{background:var(--yuzey2);color:var(--gri);border-color:var(--cizgi2)}
+
+/* ---------- gezinme rayı ---------- */
+nav{position:sticky;top:0;max-height:100vh;overflow-y:auto;
+  padding:34px 0 40px;font-family:Archivo,sans-serif}
+nav ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+nav a{display:grid;grid-template-columns:26px 1fr;gap:9px;align-items:baseline;
+  padding:6px 9px;border-radius:3px;text-decoration:none;color:var(--gri);
+  font-size:13.5px;line-height:1.35;border-left:2px solid transparent}
+nav a:hover{background:var(--yuzey2);color:var(--murekkep)}
+nav a.etkin{background:var(--mavi-zemin);color:var(--mavi);
+  border-left-color:var(--mavi);font-weight:600}
+nav a:focus-visible{outline:2px solid var(--mavi);outline-offset:1px}
+nav .no{font:600 11px/1.5 "IBM Plex Mono",monospace;color:var(--sonuk);
+  font-variant-numeric:tabular-nums}
+nav a.etkin .no{color:var(--mavi)}
+.raybaslik{font:600 10.5px/1 Archivo,sans-serif;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--sonuk);padding:0 9px 12px}
+@media(max-width:960px){nav{position:static;max-height:none;
+  border-bottom:1px solid var(--cizgi);padding:22px 0}
+  nav ol{flex-direction:row;flex-wrap:wrap;gap:5px}
+  nav a{border-left:0;border:1px solid var(--cizgi)}}
+
+/* ---------- gövde ---------- */
+main{padding:34px 0 90px;min-width:0}
+section{scroll-margin-top:22px;padding:30px 0 8px;border-top:1px solid var(--cizgi)}
+section:first-of-type{border-top:0;padding-top:8px}
+h2{font:700 27px/1.18 Archivo,sans-serif;margin:0 0 6px;letter-spacing:-.012em;
+  text-wrap:balance;display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:baseline}
+h2 .no{font:600 15px/1 "IBM Plex Mono",monospace;color:var(--mavi);
+  font-variant-numeric:tabular-nums}
+h3{font:600 18.5px/1.3 Archivo,sans-serif;margin:30px 0 8px;letter-spacing:-.006em}
+h4{font:600 14px/1.4 Archivo,sans-serif;margin:22px 0 6px;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--gri)}
+p{margin:0 0 14px;max-width:68ch}
+ul,ol.liste{margin:0 0 15px;padding-left:22px;max-width:68ch}
+li{margin-bottom:6px}
+strong{font-weight:600}
+a{color:var(--mavi)}
+hr{border:0;border-top:1px solid var(--cizgi);margin:26px 0}
+
+code{background:var(--yuzey2);padding:1.5px 5px;border-radius:3px;
+  font-size:.855em;border:1px solid var(--cizgi)}
+pre{background:var(--yuzey);border:1px solid var(--cizgi);border-radius:5px;
+  padding:15px 17px;overflow-x:auto;margin:0 0 17px;box-shadow:var(--golge)}
+pre code{background:none;border:0;padding:0;font-size:13px;line-height:1.62;
+  color:var(--murekkep)}
+
+/* ---------- tablolar ---------- */
+.tablo{overflow-x:auto;margin:0 0 20px;border:1px solid var(--cizgi);
+  border-radius:5px;background:var(--yuzey);box-shadow:var(--golge)}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{font:600 11px/1.4 Archivo,sans-serif;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--sonuk);text-align:left;padding:11px 14px;
+  border-bottom:1px solid var(--cizgi2);white-space:nowrap;background:var(--yuzey2)}
+td{padding:10px 14px;border-bottom:1px solid var(--cizgi);vertical-align:top;
+  font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+
+/* ---------- uyarı blokları ---------- */
+.blok{border-left:3px solid;padding:14px 18px;margin:0 0 20px;border-radius:0 5px 5px 0;
+  max-width:70ch}
+.blok p:last-child{margin-bottom:0}
+.blok .bas2{font:600 11.5px/1.5 Archivo,sans-serif;letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:6px;display:block}
+.blok.dur{border-color:var(--tehlike);background:var(--tehlike-zemin)}
+.blok.dur .bas2{color:var(--tehlike)}
+.blok.dikkat{border-color:var(--uyari);background:var(--uyari-zemin)}
+.blok.dikkat .bas2{color:var(--uyari)}
+.blok.not{border-color:var(--mavi);background:var(--mavi-zemin)}
+.blok.not .bas2{color:var(--mavi)}
+.blok.iyi{border-color:var(--olur);background:var(--olur-zemin)}
+.blok.iyi .bas2{color:var(--olur)}
+
+/* ---------- adım listesi ---------- */
+.adimlar{list-style:none;margin:0 0 22px;padding:0;
+  display:flex;flex-direction:column;gap:11px;counter-reset:ad}
+.adimlar>li{counter-increment:ad;display:grid;grid-template-columns:34px 1fr;
+  gap:14px;background:var(--yuzey);border:1px solid var(--cizgi);
+  border-radius:5px;padding:14px 16px;margin:0;box-shadow:var(--golge)}
+.adimlar>li::before{content:counter(ad,decimal-leading-zero);
+  font:600 12px/1.9 "IBM Plex Mono",monospace;color:var(--mavi);
+  font-variant-numeric:tabular-nums}
+.adimlar h4{margin:0 0 5px}
+.adimlar p,.adimlar ul{margin-bottom:8px}
+.adimlar>li>div>*:last-child{margin-bottom:0}
+.tamam{display:inline-flex;gap:7px;align-items:baseline;font-size:14px;
+  color:var(--olur);font-weight:600;margin-top:4px}
+
+/* ---------- şema ---------- */
+.sema{background:var(--yuzey);border:1px solid var(--cizgi);border-radius:5px;
+  padding:18px;overflow-x:auto;margin:0 0 20px;box-shadow:var(--golge)}
+.sema pre{border:0;background:none;padding:0;margin:0;box-shadow:none}
+.sema code{color:var(--gri);font-size:12.5px;line-height:1.7}
+
+.altbilgi{border-top:1px solid var(--cizgi);margin-top:40px;padding:26px 0 0;
+  font-size:13.5px;color:var(--sonuk);max-width:70ch}
+</style>
+</head>
+<body>
+
+
+<header>
+  <div class="kabuk bas">
+    <div class="ustetiket">Sabit Kanatlı Hedef İHA · Yer İstasyonu</div>
+    <h1>Talon Uçuş El Kitabı</h1>
+    <p class="altbas">Talon'u hiç görmemiş birinin kutuyu açıp uçurabilmesi
+      için yazıldı. Her terim ilk geçtiği yerde tanımlanır; hiçbir adım
+      bilindiği varsayılarak atlanmaz.</p>
+    <div class="durum">
+      <span class="rozet bilgi">29 Ağustos 2026</span>
+      <span class="rozet ok">Yer testleri yapıldı</span>
+      <span class="rozet yok">Havada uçuş yapılmadı</span>
+      <span class="rozet bilgi">ArduPlane 4.7</span>
+      <span class="rozet bilgi">Bekçiler R1–R89</span>
+    </div>
+  </div>
+</header>
+
+<div class="kabuk dizilim">
+<nav aria-label="Bölümler">
+  <div class="raybaslik">Bölümler</div>
+  <ol>
+    <li><a href="#b0"><span class="no">00</span><span>Beş dakikada özet</span></a></li>
+    <li><a href="#b1"><span class="no">01</span><span>Sistem nedir</span></a></li>
+    <li><a href="#b2"><span class="no">02</span><span>Donanım ve kablolama</span></a></li>
+    <li><a href="#b3"><span class="no">03</span><span>Kurulum</span></a></li>
+    <li><a href="#b4"><span class="no">04</span><span>Başlatma</span></a></li>
+    <li><a href="#b5"><span class="no">05</span><span>Uçuş modları</span></a></li>
+    <li><a href="#b6"><span class="no">06</span><span>Arayüz — her özellik</span></a></li>
+    <li><a href="#b7"><span class="no">07</span><span>Harita planlayıcı</span></a></li>
+    <li><a href="#b8"><span class="no">08</span><span>Elden atışla kalkış</span></a></li>
+      <li><a href="#bg"><span class="no">★</span><span>Görevin icrası</span></a></li>
+<li><a href="#b9"><span class="no">09</span><span>Uçuş prosedürü</span></a></li>
+    <li><a href="#b10"><span class="no">10</span><span>Acil durumlar</span></a></li>
+    <li><a href="#b11"><span class="no">11</span><span>Arıza arama</span></a></li>
+    <li><a href="#b12"><span class="no">12</span><span>Kapalı kalan işler</span></a></li>
+    <li><a href="#b13"><span class="no">13</span><span>Güvenlik</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ===== 0 ===== -->
+<section id="b0">
+  <h2><span class="no">00</span><span>Beş dakikada özet</span></h2>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel
+./baslat_talon.sh</code></pre>
+  <p>Tarayıcıda <code>http://localhost:8000</code>. Başka hiçbir yere gitmen
+    gerekmiyor — tek komut üç süreci birden açar.</p>
+  <div class="tablo"><table>
+    <tr><th>Yaparsın</th><th>Nerede</th></tr>
+    <tr><td>Hazır şekil uçurmak (kare, daire, elips)</td><td>Arayüzün <strong>Şekil çiz</strong> bölümü</td></tr>
+    <tr><td>Harita üstünde kendi rotanı çizmek</td><td><strong>Görev Planlama — Harita</strong> düğmesi</td></tr>
+    <tr><td>Elle uçurmak</td><td><strong>Manuel Kontrol</strong> düğmesi</td></tr>
+    <tr><td>Acil durdurmak</td><td><strong>RTL</strong> ya da <strong>Acil — Motoru Durdur</strong></td></tr>
+  </table></div>
+</section>
+
+<!-- ===== 1 ===== -->
+<section id="b1">
+  <h2><span class="no">01</span><span>Sistem nedir — parça parça</span></h2>
+
+  <h3>Fiziksel zincir</h3>
+  <div class="sema"><pre><code>[Pixhawk uçuş kontrolcüsü]        uçağın içinde, otopilot
+        │
+        │ SiK telemetri telsizi (433/915 MHz, 57600 baud)
+        ▼
+[USB telemetri modülü]            senin laptopunda
+        │
+        ▼
+[yayinci.py]                      seri portu AÇAN tek program
+        │
+        ├──► udp:14552   arayüzün kendisi
+        ├──► udp:14550   arayüzün alt süreçleri
+        ├──► udp:14554   görev planlayıcı (harita)
+        └──► udp:47800   drone bilgisayarı — 5 Hz hedef konumu</code></pre></div>
+
+  <p><strong>Neden arada bir dağıtıcı var:</strong> bir seri portu aynı anda
+    <strong>tek</strong> program açabilir. Arayüz doğrudan açsaydı, planlayıcı
+    ve drone bilgisayarı aynı telemetriyi göremezdi. <code>yayinci.py</code>
+    portu tek başına açar ve gelen her MAVLink paketini dört yere kopyalar.</p>
+
+  <div class="blok dur">
+    <span class="bas2">Her tüketiciye ayrı port</span>
+    <p>Aynı UDP portuna iki program bağlanırsa çekirdek her paketi yalnız
+      <strong>birine</strong> verir. İkisi de paketlerin yarısını görür, ikisi
+      de hata vermez — telemetri "biraz seyrek" görünür ve sebebi asla
+      anlaşılmaz. <em>18 Ağustos 2026'da yaşandı.</em></p>
+  </div>
+
+  <h3>Terimler</h3>
+  <div class="tablo"><table>
+    <tr><th>Terim</th><th>Ne demek</th></tr>
+    <tr><td><strong>MAVLink</strong></td><td>Otopilotla yer istasyonu arasındaki mesaj dili. Her mesajın bir tipi var (HEARTBEAT, GLOBAL_POSITION_INT…).</td></tr>
+    <tr><td><strong>HEARTBEAT</strong></td><td>Otopilotun saniyede birkaç kez "buradayım, şu moddayım, arm'lıyım/değilim" demesi. Bağlantının canlı olduğunu bundan anlarız.</td></tr>
+    <tr><td><strong>ARM</strong></td><td>Motorun dönmesine izin verilmesi. DISARM = motor kilitli, ne olursa olsun dönmez.</td></tr>
+    <tr><td><strong>Uçuş modu</strong></td><td>Otopilotun o an hangi kurala göre uçtuğu — elle, yarı otomatik, tam otomatik. Bölüm 05.</td></tr>
+    <tr><td><strong>Waypoint</strong></td><td>Görev noktası: uçağın sırayla gideceği bir GPS koordinatı + irtifa.</td></tr>
+    <tr><td><strong>Görev</strong></td><td>Waypoint'lerin sıralı listesi. Otopilotun hafızasına yazılır.</td></tr>
+    <tr><td><strong>EV noktası</strong></td><td>Kalkış yeri (home). Bütün görev buna göre kurulur; RTL buraya döner.</td></tr>
+    <tr><td><strong>GPS fix</strong></td><td>GPS'in konumu gerçekten çözmüş olması. <code>3D-11</code> = üç boyutlu çözüm, 11 uydu. Fix yokken koordinatlar 0,0 gelir.</td></tr>
+    <tr><td><strong>RTL</strong></td><td>Return To Launch — eve dön.</td></tr>
+    <tr><td><strong>Failsafe</strong></td><td>Bağlantı kesilince otopilotun kendiliğinden yaptığı şey.</td></tr>
+  </table></div>
+
+  <h3>Programlar</h3>
+  <div class="tablo"><table>
+    <tr><th>Program</th><th>Port</th><th>İşi</th></tr>
+    <tr><td><code>talon/yayinci.py</code></td><td>—</td><td>Seri portu açar, MAVLink'i dört yere aynalar, drone'a 5 Hz hedef konumu yayınlar</td></tr>
+    <tr><td><code>talon/arayuz</code></td><td><strong>8000</strong></td><td>Ana yer kontrol arayüzü</td></tr>
+    <tr><td><code>talon/gorev_plani.py</code></td><td><strong>8010</strong></td><td>Harita üstünde waypoint planlayıcı</td></tr>
+    <tr><td><code>talon/baglanti_testi.py</code></td><td>—</td><td>Bağlantı arızasını beş katmanda teşhis eder</td></tr>
+    <tr><td><code>talon/kalkis_ayari.py</code></td><td>—</td><td>Kalkış parametrelerini okur/yazar, ölü zamanı hesaplar</td></tr>
+    <tr><td><code>talon/atis_testi.py</code></td><td>—</td><td>Elden atış algılamasını ölçer (arm etmeden, pervanesiz)</td></tr>
+    <tr><td><code>talon/karo.py</code></td><td>—</td><td>Çevrimdışı harita karolarını indirir ve saklar</td></tr>
+  </table></div>
+</section>
+
+<!-- ===== 2 ===== -->
+<section id="b2">
+  <h2><span class="no">02</span><span>Donanım ve kablolama</span></h2>
+  <h3>Uçakta</h3>
+  <ul>
+    <li><strong>Pixhawk</strong> uçuş kontrolcüsü, ArduPlane 4.7</li>
+    <li><strong>SiK telemetri telsizi</strong> (uçak tarafı) — TELEM1 portunda</li>
+    <li><strong>GPS + pusula</strong> modülü</li>
+    <li><strong>LiPo pil</strong> — 6S (panelin 20.4 V iniş eşiği bunu gösteriyor: 3.4 V/hücre)</li>
+    <li><strong>Pitot (hava hızı) sensörü YOK</strong> — sonuçları için bölüm 08</li>
+    <li>Pervane: <strong>yer testlerinde ÇIKARILIR</strong></li>
+  </ul>
+  <h3>Yerde</h3>
+  <ul>
+    <li>Laptop</li>
+    <li><strong>SiK telemetri telsizi</strong> (yer tarafı) — USB ile</li>
+    <li>Kumanda — iptal yolu olarak <strong>her zaman elde ve açık</strong></li>
+  </ul>
+  <h3>Bağlantı sırası</h3>
+  <ol class="liste">
+    <li>Telemetri modülünü laptopa tak</li>
+    <li>Uçağa pil bağla</li>
+    <li>İki telsizin de LED'i <strong>sabit</strong> yanmalı — yanıp sönüyorsa eşleşmemişler</li>
+  </ol>
+  <pre><code>ls -l /dev/serial/by-id/</code></pre>
+  <p>Bir satır çıkmalı. Çıkmıyorsa <strong>kabloyu değiştir</strong> — kablo
+    arızası bu projede bir kez yaşandı ve saatler yedi.</p>
+</section>
+
+<!-- ===== 3 ===== -->
+<section id="b3">
+  <h2><span class="no">03</span><span>Kurulum — her bilgisayarda bir kez</span></h2>
+  <pre><code># 1) Depoyu al
+cd ~/projects
+git clone &lt;depo-adresi&gt; drones_of_war_entegrasyon
+cd drones_of_war_entegrasyon/reel
+
+# 2) Paketler
+pip install -r requirements.txt
+pip install -r talon/arayuz/requirements.txt
+
+# 3) Seri port izni — ÇIKIP TEKRAR GİRMEK ŞART
+sudo usermod -aG dialout $USER
+
+# 4) ModemManager'ı kapat
+#    Her yeni seri porta AT komutu gönderip "modem mi?" diye yoklar,
+#    Pixhawk'ın MAVLink akışını bozar.
+sudo systemctl disable --now ModemManager</code></pre>
+
+  <h3>Haritayı önceden indir</h3>
+  <div class="blok dikkat">
+    <span class="bas2">Sahada internet olmayabilir</span>
+    <p>Uçuş alanının harita karolarını <strong>evde</strong> indir. Koordinatı
+      Google Maps'te alana <strong>sağ tıklayarak</strong> alırsın — en üstteki
+      sayı çifti odur, tıklayınca kopyalanır.</p>
+  </div>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel/talon
+python3 gorev_plani.py --indir 41.002892,28.656232 --yaricap 2000 --z 14-17</code></pre>
+  <div class="tablo"><table>
+    <tr><th>Yarıçap</th><th>Zoom</th><th>Karo</th><th>Boyut</th><th>Süre</th></tr>
+    <tr><td>1 km</td><td>14–17</td><td>~324</td><td>~6 MB</td><td>~1 dk</td></tr>
+    <tr><td>2 km</td><td>14–17</td><td>~740</td><td>~15 MB</td><td>~1 dk</td></tr>
+    <tr><td>2 km</td><td>14–18</td><td>~2261</td><td>~45 MB</td><td>~5 dk</td></tr>
+  </table></div>
+  <p><strong>Zoom ne demek:</strong> haritanın kaç kat yakınlaştığı. 41°
+    enlemde ölçüldü:</p>
+  <div class="tablo"><table>
+    <tr><th>Zoom</th><th>1 piksel</th><th>1 karo</th></tr>
+    <tr><td>14</td><td>7.2 m</td><td>1843 m</td></tr>
+    <tr><td>15</td><td>3.6 m</td><td>922 m</td></tr>
+    <tr><td>16</td><td>1.8 m</td><td>461 m</td></tr>
+    <tr><td>17</td><td>0.9 m</td><td>230 m</td></tr>
+    <tr><td>18</td><td>0.4 m</td><td>115 m</td></tr>
+  </table></div>
+  <p>Aralık indirdiğin için hepsi çalışır: uzaktan bakarken düşük zoom,
+    waypoint koyarken yüksek zoom. Karolar <code>~/.skydagger/karolar</code>
+    altında durur. Sahada telefonu hotspot yaparsan aynı komut orada da çalışır.</p>
+</section>
+
+<!-- ===== 4 ===== -->
+<section id="b4">
+  <h2><span class="no">04</span><span>Başlatma — tek komut</span></h2>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel
+./baslat_talon.sh</code></pre>
+  <p>Çıktı şöyle olmalı:</p>
+  <div class="sema"><pre><code>YAYINCI: /dev/serial/by-id/...  ->  udp:14552 + udp:14550 + udp:14554 + udp://...:47800
+HARİTA : http://localhost:8010   (görev planlayıcı)
+ARAYÜZ : http://localhost:8000</code></pre></div>
+  <p><strong>Üç süreç birden açılır.</strong> <code>Ctrl+C</code> üçünü birden kapatır.</p>
+  <pre><code>./baslat_talon.sh /dev/ttyUSB0 192.168.1.50   # port ve drone IP'sini elle ver
+./baslat_talon.sh --sahte 192.168.1.50        # Pixhawk yokken (sahte hedef)
+./baslat_talon.sh --kapat                     # yalnız kapat</code></pre>
+  <p class="tamam">✓ Tamam ölçütü: arayüzde <code>BAĞLANTI: BAĞLI</code>, telemetri sayıları akıyor.</p>
+  <p>Akmıyorsa zincirin nerede koptuğunu bu söyler — port var mı → açılıyor mu
+    → bayt geliyor mu → MAVLink çözülüyor mu → hangi mesajlar geliyor:</p>
+  <pre><code>python3 talon/baglanti_testi.py</code></pre>
+</section>
+
+<!-- ===== 5 ===== -->
+<section id="b5">
+  <h2><span class="no">05</span><span>Uçuş modları — tek tek</span></h2>
+  <p>Uçuş modu, otopilotun o an <strong>hangi kurala göre</strong> uçtuğudur.
+    Panelin <strong>Uçuş Modu</strong> satırından değiştirilir.</p>
+
+  <h3>MANUAL</h3>
+  <p>Kumanda çubukları doğrudan kumanda yüzeylerine gider. Otopilot
+    <strong>hiçbir şey yapmaz</strong> — ne dengeler, ne sınırlar.</p>
+  <ul><li><strong>Ne zaman:</strong> otopilota güvenmediğin an; acil iptal yolu.</li>
+      <li><strong>Risk:</strong> her şey senin elinde. Uçağı elle uçurmayı bilmiyorsan burada düşürürsün.</li></ul>
+
+  <h3>STAB (Stabilize)</h3>
+  <p>Çubukları bıraktığında uçak <strong>kanatlarını düzler ve burnunu yatay
+    tutar</strong>. Çubuk verdiğinde istediğin gibi döner — yani "bıraktığında
+    kendini toparlar". Sınırı yoktur: çubuğu sonuna kadar itersen uçak devrilebilir.</p>
+
+  <h3>FBWA — Fly-By-Wire A <span style="color:var(--mavi)">◆ elle uçuşun varsayılanı</span></h3>
+  <p>"Kablo ile uçuş". Çubuk artık <em>kumanda yüzeyini</em> değil,
+    <strong>istenen açıyı</strong> söyler. Aileron çubuğunu yarıya itmek
+    "yarım yatış açısı istiyorum" demektir; otopilot o açıyı tutar ve
+    <strong>sınırların dışına çıkmana izin vermez</strong>.</p>
+  <ul>
+    <li>Yatış sınırı: <code>ROLL_LIMIT_DEG</code></li>
+    <li>Burun yukarı/aşağı: <code>PTCH_LIM_MAX_DEG</code> / <code>PTCH_LIM_MIN_DEG</code></li>
+    <li><strong>Gaz sende</strong> — otopilot gazı yönetmez</li>
+  </ul>
+
+  <h3>LOITER</h3>
+  <p>Uçak <strong>bulunduğu noktanın etrafında daire çizerek bekler</strong>.
+    Sen hiçbir şey yapmazsın. "Düşünmem lazım" anının doğru cevabı; görev
+    durdurmanın da doğru yolu. Yarıçap <code>WP_LOITER_RAD</code> ile belirlenir.</p>
+
+  <h3>AUTO</h3>
+  <p>Otopilot <strong>yüklü görevi</strong> baştan sona kendi uçar: kalkış,
+    waypoint'ler, görev sonu davranışı.</p>
+  <div class="blok not">
+    <span class="bas2">Mod satırında AUTO düğmesi yok</span>
+    <p>AUTO'ya <strong>Başlat</strong> düğmeleriyle geçilir (bölüm 07.4). Bu
+      bilinçli: AUTO'ya girmek "görevi başlat" demektir ve yanlışlıkla
+      basılmamalıdır.</p>
+  </div>
+
+  <h3>RTL — Return To Launch</h3>
+  <p>Eve döner ve <strong>çember çizerek bekler</strong>. Kendiliğinden inmez —
+    ancak görevde <code>DO_LAND_START</code> varsa ve <code>RTL_AUTOLAND</code>
+    açıksa iner. Panelde sarı <strong>RTL — Eve Dön</strong> düğmesi.</p>
+
+  <h3>AUTOLAND</h3>
+  <p>Uçak nerede olursa olsun <strong>kalktığı yere iner</strong>: base leg +
+    final + flare paternini kendisi kurar. Panelde
+    <strong>🛬 Şimdi İn — Kalkış Yerine</strong>.</p>
+  <div class="blok dur">
+    <span class="bas2">İki şartı var — sağlanmazsa mod sessizce reddedilir</span>
+    <p><strong>1. Uçak UÇUYOR olmalı.</strong> Yerdeyken "Must already be
+      flying!" der.</p>
+    <p><strong>2. Kalkış yönü YAKALANMIŞ olmalı.</strong> Yön, uçuş sırasında
+      GPS yer rotasından alınır ve yalnız bazı modlar yakalar: AUTO, FBWA,
+      MANUAL, TAKEOFF, ACRO, STABILIZE, TRAINING, AUTOTUNE. LOITER / CRUISE /
+      FBWB / RTL <strong>yakalamaz</strong>. Ve <strong>DISARM yön kaydını
+      SİLER</strong> — her uçuşta yeniden yakalanması gerekir.</p>
+    <p>Panelin <em>Otomatik iniş — hazır mı</em> bölümü tam bunu gösterir.
+      "Kalkış yönü: henüz yakalanmadı" yazıyorsa AUTOLAND çalışmaz.</p>
+  </div>
+
+  <h3>AUTOTUNE</h3>
+  <p>Uçuş modu <strong>değil</strong>, bir öğrenme anahtarıdır — mod değişmez.
+    Açıkken otopilot senin çubuk hareketlerine bakarak kendi PID kazançlarını
+    ayarlar.</p>
+  <ul>
+    <li>Yalnız <strong>AUTO, FBWA, FBWB, LOITER</strong> modlarında kabul edilir.
+      MANUAL/CRUISE'da otopilot "Autotuning not allowed in this mode!" yazar.</li>
+    <li>Açıkken çubukları <strong>SERT</strong> oynat — yumuşak hareketten öğrenemez.</li>
+    <li><strong>İnişten önce KAPAT.</strong></li>
+  </ul>
+</section>
+
+<!-- ===== 6 ===== -->
+<section id="b6">
+  <h2><span class="no">06</span><span>Arayüz — her özellik tek tek</span></h2>
+
+  <h3>Üst telemetri şeridi</h3>
+  <div class="tablo"><table>
+    <tr><th>Alan</th><th>Ne gösterir</th><th>Neye dikkat</th></tr>
+    <tr><td><strong>BAĞLANTI</strong></td><td>MAVLink akıyor mu</td><td><code>BAĞLI</code> değilse hiçbir şey yapma</td></tr>
+    <tr><td><strong>ARM</strong></td><td>Motor kilidi</td><td><code>disarm</code> = motor dönmez</td></tr>
+    <tr><td><strong>MOD</strong></td><td>O anki uçuş modu</td><td>Bölüm 05</td></tr>
+    <tr><td><strong>BATARYA</strong></td><td>Volt ve yüzde</td><td>20.4 V'ta otomatik iniş devreye giriyor</td></tr>
+    <tr><td><strong>GPS</strong></td><td>Fix tipi ve uydu sayısı</td><td><code>3D</code> ve <strong>≥10 uydu</strong> olmadan görev yükleme</td></tr>
+    <tr><td><strong>İRTİFA</strong></td><td>EV noktasına göre yükseklik</td><td>Yerde 0 m</td></tr>
+    <tr><td><strong>HIZ</strong></td><td>Yer hızı</td><td>Pitot yok — bu GPS hızıdır</td></tr>
+    <tr><td><strong>GAZ</strong></td><td>Motor yüzdesi</td><td>Yerde %0</td></tr>
+    <tr><td><strong>GÖREV</strong></td><td>Yüklü şeklin adı ve aktif öğe</td><td><code>KARE #1</code> = kare görevi, 1. öğede</td></tr>
+  </table></div>
+
+  <h3>3B panel</h3>
+  <p>Uçağın konumunu, rotayı ve ufku üç boyutlu gösterir. <strong>Sürükle</strong>
+    → döndür · <strong>tekerlek</strong> → yakınlaş · <strong>sığdır</strong> →
+    hepsini çerçevele. Altındaki <code>eve … · irtifa …</code> eve uzaklığı ve
+    yüksekliği verir.</p>
+
+  <h3>Manuel Kontrol</h3>
+  <p>Ekranda iki sanal joystick açar; kumanda yokken uçağı arayüzden uçurmanı
+    sağlar. İçinde ARM / DISARM, gazı sıfırla, RTL, Şimdi İn ve Acil düğmeleri var.</p>
+  <div class="blok dikkat">
+    <span class="bas2">AUTO modundayken reddedilir</span>
+    <p><code>STICK_MIXING=1</code> parametresi yüzünden RC girdisi AUTO'nun
+      navigasyon çıkışına <strong>karışır</strong>. Sessizce AUTO'dan çıkmak
+      yerine arayüz açıkça reddediyor: <em>"GPS görevi uçuyor — önce Görevi
+      Durdur'a basın."</em></p>
+  </div>
+
+  <h3>Görev Planlama — Harita</h3>
+  <p>Harita planlayıcıyı yeni sekmede açar (bölüm 07).</p>
+  <div class="blok dikkat">
+    <span class="bas2">Şekil görevi ile harita görevi aynı araca yazar</span>
+    <p><strong>Son yüklenen geçerlidir.</strong> Arayüz araçtaki görevi geri
+      okumadığı için ikisini karıştırmak kolaydır — hangisinin yüklü olduğunu
+      planlayıcıdan teyit et.</p>
+  </div>
+
+  <h3>Şekil çiz — GPS görevi</h3>
+  <p><strong>KARE / DAİRE / ELİPS</strong> — hazır rota şekilleri.</p>
+  <div class="tablo"><table>
+    <tr><th>Alan</th><th>Ne</th></tr>
+    <tr><td>Kenar (m) / Yarıçap (m)</td><td>Şeklin boyutu</td></tr>
+    <tr><td>Kısa eksen (m)</td><td>Yalnız elipste</td></tr>
+    <tr><td>İrtifa (m)</td><td>Waypoint yüksekliği</td></tr>
+    <tr><td>Tur (0=∞)</td><td>Şeklin kaç kez uçulacağı</td></tr>
+    <tr><td>Yön (°)</td><td>Şeklin kuzeye göre döndürülmesi</td></tr>
+    <tr><td>Merkez</td><td>Kalkış noktası ya da uçağın şu anki konumu</td></tr>
+  </table></div>
+  <p><strong>Görev bitince:</strong> Eve Dön (RTL) · Bekle (LOITER) · Otomatik İn.</p>
+  <p>Altındaki özet satırı gerçek sayıları verir — <em>"çevre 1000 m · aralık
+    250 m · kabul 60 m · en dar kıvrım 125 m · eve en fazla 177 m · ~3 dk"</em>.
+    <strong>En dar kıvrım</strong>, uçağın dönüş yarıçapından küçükse o şekil
+    uçulamaz.</p>
+
+  <div class="blok dikkat">
+    <span class="bas2">Bilinen davranış — GPS uyarısı donabilir</span>
+    <p>"GPS fix yok (fix=0, 0 uydu)" uyarısı ve <strong>Görevi Yükle</strong>
+      kilidi yalnız <strong>sen bir alana dokununca</strong> tazelenir,
+      telemetri döngüsünde değil. Sayfayı fix gelmeden açtıysan uyarı donmuş
+      kalır — üst şeritte <code>3D-11</code> yazarken bile.
+      <strong>Çözüm: KARE düğmesine bir kez bas</strong> (ya da F5).</p>
+  </div>
+  <div class="blok dikkat">
+    <span class="bas2">Bilinen davranış — arayüz aracı geri okumaz</span>
+    <p><strong>Başlat</strong> yalnız <em>arayüzün kendi yüklediği</em> göreve
+      bakar. Harita planlayıcıdan yüklenen görev araçta olsa bile arayüz
+      "Araçta yüklü görev yok" der ve düğme kapalı kalır. Harita görevini
+      <strong>planlayıcının kendi Başlat'ıyla</strong> başlat.</p>
+  </div>
+
+  <h3>Otomatik iniş — hazır mı</h3>
+  <div class="tablo"><table>
+    <tr><th>Satır</th><th>Ne demek</th></tr>
+    <tr><td>Patern / çit</td><td>İniş paterninin boyu / güvenlik çiti</td></tr>
+    <tr><td>Süzülme</td><td>Süzülme açısı (ör. 7.1°, nominal 4.8°)</td></tr>
+    <tr><td><strong>Kalkış yönü</strong></td><td><strong>Yakalandı mı</strong> — "henüz yakalanmadı" ise AUTOLAND çalışmaz</td></tr>
+    <tr><td>Batarya 2. kademe</td><td>Düşük voltajda ne olacak (ör. otomatik iniş @ 20.4 V)</td></tr>
+  </table></div>
+
+  <h3>ARM / DISARM ve uçuş öncesi</h3>
+  <ul>
+    <li><strong>ARM</strong> — motora izin ver. Otopilot kendi ön kontrollerini
+      yapar; reddederse sebebini <em>Otopilot mesajları</em> bölümünde yazar.</li>
+    <li><strong>DISARM</strong> — motoru kilitle. <em>Kalkış yönü kaydını da siler.</em></li>
+    <li><strong>Uçuş Öncesi Kontrol</strong> — ayrı bir program çalıştırıp tam
+      rapor basar: sensörler, GPS, pusula, batarya, parametreler.</li>
+    <li><strong>RTL — Eve Dön</strong> — acil dönüş.</li>
+    <li><strong>🛬 Şimdi İn</strong> — AUTOLAND.</li>
+  </ul>
+
+  <h3>Otopilot mesajları</h3>
+  <p>Uçaktan gelen ham metin mesajları. ARM reddedildiğinde, mod
+    değişmediğinde, bir şey ters gittiğinde <strong>sebep buradadır</strong>.
+    Örnek: <code>PreArm: In landing sequence</code> — görev son öğede (RTL)
+    takılı kalmış; başlangıç öğesini sabitlemek gerekir.</p>
+
+  <h3>Acil</h3>
+  <div class="blok dur">
+    <span class="bas2">Havadayken bu düğmeye basma</span>
+    <p><strong>⚠ Acil — Motoru Durdur (DISARM)</strong> motoru anında kilitler.
+      Havada basarsan motor durur ve uçak süzülerek düşer. Havadaki acil yolun
+      <strong>RTL</strong> ya da <strong>MANUAL</strong>'dir. Bu düğme yerdeki
+      acil içindir — pervane dönerken biri yaklaştı gibi.</p>
+  </div>
+</section>
+
+<!-- ===== 7 ===== -->
+<section id="b7">
+  <h2><span class="no">07</span><span>Harita planlayıcı — localhost:8010</span></h2>
+  <p><strong>Neden ayrı:</strong> hazır şekiller alanı tanımaz. Gerçek arazide
+    "şu ağacın solundan geç, şu binadan uzak dur" demek için haritaya bakarak
+    nokta koymak gerekir.</p>
+
+  <h3>Harita</h3>
+  <ul>
+    <li><strong>Tıkla</strong> → waypoint ekle · <strong>sürükle</strong> →
+      kaydır · <strong>sağ tık</strong> → son noktayı sil ·
+      <strong>tekerlek / + −</strong> → yakınlaş · <strong>⌖</strong> → EV noktasına dön</li>
+    <li><strong>Yeşil daire</strong> = EV noktası · <strong>sarı ok</strong> =
+      uçağın konumu ve pusula yönü · <strong>mavi numaralı daireler</strong> =
+      waypoint'ler ve rota</li>
+    <li>Harita <strong>tamamen çevrimdışıdır</strong>; karoları indirilmemiş
+      bölge koyu görünür ve "⚠ bu bölgenin karoları indirilmemiş" yazar</li>
+  </ul>
+  <p>Sağdaki tabloda her noktanın <code>kuzey</code>, <code>doğu</code>,
+    <code>irtifa</code> ve <code>uzaklık</code> değeri var — yüklemeden önce
+    okumak iyi bir alışkanlık.</p>
+
+  <h3>Görev</h3>
+  <p><strong>Görevi Yükle</strong> görevi kurar ve araca yazar:</p>
+  <div class="sema"><pre><code>0     EV noktası
+1     TAKEOFF          (kalkış irtifasına tırman)
+2..n  WAYPOINT         (senin noktaların)
+n+1   RTL / LOITER     (görev bitince)</code></pre></div>
+  <p>3 waypoint → 6 öğe. 7 waypoint → 10 öğe.</p>
+
+  <h4>Görevi Başlat (AUTO) — üç işi sırayla yapar</h4>
+  <ol class="liste">
+    <li><strong><code>mission_set_current(1)</code></strong> — başlangıç öğesini
+      sabitler. <em>Neden:</em> <code>MIS_RESTART=0</code> olduğu için AUTO'ya
+      girmek görevi <strong>kaldığı yerden</strong> sürdürür; sen baştan
+      başlayacağını sanırsın. Ayrıca son öğede (RTL) takılı kalmak, aracın
+      <code>PreArm: In landing sequence</code> deyip ARM'ı reddetmesine yol açar.</li>
+    <li><strong>Yerdeyken zaten AUTO'daysan araya FBWA sokar.</strong>
+      <em>Neden:</em> araç zaten AUTO'daysa "AUTO'ya geç" komutu hiçbir şey
+      yapmaz; ArduPlane'in elden-atış tetikleyicisi
+      (<code>auto_takeoff_check</code>) <strong>hiç çalışmaz</strong>. Uçak
+      arm'lı halde yerde bekler ve <code>DISARM_DELAY</code> dolunca
+      kendiliğinden disarm olur. <em>SITL'de ölçüldü: 600 saniye boyunca irtifa
+      0.</em> Havadayken yapılmaz — uçuş ortasında moddan çıkmak rotayı bozar.</li>
+    <li><strong>AUTO'ya geçer ve HEARTBEAT ile doğrular.</strong>
+      <em>Neden:</em> <code>set_mode</code> komutunun onayı (ACK) yoktur. Tek
+      gönderimde paket düşerse komut sessizce kaybolur; SiK telsizinde paket
+      kaybı normaldir.</li>
+  </ol>
+  <p>Uçak <strong>havadaysa</strong> kalkış adımı atlanır, görev ilk
+    waypoint'ten başlar. Düğme gri ise <strong>üstüne gel</strong> — neden
+    kapalı olduğunu yazar (bağlantı yok / görev yüklenmedi / araç ARM değil).</p>
+  <p><strong>Durdur (LOITER)</strong> uçağı bulunduğu yerde çember çizdirir.
+    <strong>Araçtaki Görevi Sil</strong> otopilotun hafızasındaki görevi siler.</p>
+
+  <h3>Harita önbelleği</h3>
+  <p>Kaç karo, kaç MB, hangi dizin. <strong>Alanı İndir</strong> seçtiğin
+    yarıçap ve zoom aralığını ilerleme çubuğuyla indirir. İki indirme aynı anda
+    çalışamaz — OpenStreetMap gönüllü sunucularıdır ve saniyede ~8 istekten
+    fazlası IP engeline yol açar.</p>
+</section>
+
+<!-- ===== 8 ===== -->
+<section id="b8">
+  <h2><span class="no">08</span><span>Elden atışla kalkış</span></h2>
+  <div class="blok dur">
+    <span class="bas2">En kritik bölüm</span>
+    <p>Bu uçak daha önce <strong>iki kez tam atış anında düştü</strong>. Sebebi
+      ölçüldü ve giderildi; aşağıdakiler o ölçümlerin sonucu.</p>
+  </div>
+
+  <h3>Neden düşüyordu — aritmetik</h3>
+  <p>Elden attığında motor hemen çalışmaz. Arada geçen süreye
+    <strong>ölü zaman</strong> diyoruz:</p>
+  <div class="sema"><pre><code>ölü zaman = TKOFF_THR_DELAY × 0.1 s  +  TKOFF_THR_MAX / THR_SLEWRATE
+            ───────────────────────     ─────────────────────────────
+            atış algılandıktan          gazın 0'dan tam açılmaya
+            sonraki bekleme             çıkması için geçen süre</code></pre></div>
+  <p><strong>Eskiden:</strong> <code>THR_SLEWRATE = 83 %/s</code> idi →
+    <code>100/83 = 1.20 s</code>. Motorsuz 1.20 saniyede uçak
+    <strong>7.1 m</strong> düşebilir. Elden atış yüksekliğin
+    <strong>1.7 m</strong>. Yani uçak yere çarpmadan motorun çalışması
+    <strong>mümkün değildi</strong>.</p>
+  <p><strong>Şimdi:</strong> <code>THR_SLEWRATE = 0</code> — sınır yok, gaz
+    anında tam açılır. Ölü zaman <strong>0.20 s</strong> (yalnız yazılım);
+    motor ve pervane ataleti dahil gerçekte ~0.5 s.</p>
+
+  <h3>Atış hızı — ikinci şart</h3>
+  <p>Motor çalışsa bile uçağın <strong>uçabilecek hıza</strong> ulaşması gerekir:</p>
+  <div class="sema"><pre><code>h = (v_min² − v_atış²) / (2g)</code></pre></div>
+  <p><code>v_min</code> = uçabildiği en düşük hız (<code>AIRSPEED_MIN</code>),
+    <code>v_atış</code> = senin attığın hız, <code>g</code> = 9.81 m/s².
+    <code>AIRSPEED_MIN = 15 m/s</code> iken <strong>gereken atış hızı
+    ≥ 13.8 m/s</strong> — bu sert bir atıştır, hafifçe salıvermek yetmez.</p>
+
+  <h3>Atış algılama eşiği</h3>
+  <p>Otopilot, ivmeölçerden gelen ileri ivme <code>TKOFF_THR_MINACC</code>
+    değerini aşınca "atıldım" der.</p>
+  <div class="blok iyi">
+    <span class="bas2">Ölçüldü — 29 Ağustos 2026, atis_testi.py</span>
+    <p>Eşik <strong>11.0 m/s²</strong> · tepe ivme <strong>15.7 m/s²</strong> ·
+      5 atışın 4'ü algılandı · bir atış <strong>11.7</strong> ile sınırda kaldı
+      → <strong>zayıf atma</strong>.</p>
+  </div>
+
+  <h3>Kalkış parametreleri</h3>
+  <div class="tablo"><table>
+    <tr><th>Parametre</th><th>Değer</th><th>Ne yapar</th></tr>
+    <tr><td><code>TKOFF_THR_MINACC</code></td><td>11 m/s²</td><td>Atış algılama eşiği</td></tr>
+    <tr><td><code>TKOFF_THR_DELAY</code></td><td>0–2 (×0.1 s)</td><td>Atış algılandıktan sonra gazı açmadan önceki bekleme</td></tr>
+    <tr><td><code>TKOFF_THR_MAX</code></td><td>100 %</td><td>Kalkışta gidilecek gaz</td></tr>
+    <tr><td><code><strong>THR_SLEWRATE</strong></code></td><td><strong>0</strong></td><td>Gazın saniyede en fazla kaç % değişebileceği. <strong>0 = sınır yok = anında</strong></td></tr>
+    <tr><td><code>TKOFF_LVL_PITCH</code></td><td>12°</td><td>İlk tırmanışta tutulacak burun açısı</td></tr>
+    <tr><td><code>TKOFF_LVL_ALT</code></td><td>—</td><td>Bu irtifaya kadar kanatlar düz tutulur</td></tr>
+    <tr><td><code>TKOFF_ALT</code></td><td>—</td><td>Kalkışın biteceği irtifa</td></tr>
+    <tr><td><code>AIRSPEED_MIN</code></td><td>15 m/s</td><td>Uçabildiği en düşük hız — stall payı buradan gelir</td></tr>
+    <tr><td><code>AIRSPEED_CRUISE</code></td><td>—</td><td>Seyir hızı</td></tr>
+    <tr><td><code>PTCH_LIM_MAX/MIN_DEG</code></td><td>—</td><td>Burun yukarı/aşağı sınırları</td></tr>
+    <tr><td><code>ROLL_LIMIT_DEG</code></td><td>—</td><td>Yatış sınırı</td></tr>
+    <tr><td><code>TKOFF_TIMEOUT</code></td><td>—</td><td>Kalkış bu sürede olmazsa iptal</td></tr>
+    <tr><td><code>ARSPD_TYPE</code></td><td>—</td><td>Hava hızı sensörü tipi. <strong>Pitot yok → 0 olmalı</strong></td></tr>
+    <tr><td><code>ARSPD_USE</code></td><td>—</td><td>Hava hızı güdümde kullanılıyor mu</td></tr>
+  </table></div>
+  <pre><code>python3 kalkis_ayari.py                    # hepsini oku, ölü zamanı hesapla
+python3 kalkis_ayari.py --yaz THR_SLEWRATE=0   # değiştir (onay sorar)</code></pre>
+  <div class="blok dur">
+    <span class="bas2">Ölü zaman 1 saniyenin üstündeyse atma</span>
+  </div>
+
+  <h3>Nasıl atmalısın</h3>
+  <ol class="liste">
+    <li><strong>Rüzgâra karşı</strong> dur</li>
+    <li>Uçağı <strong>iki elinle gövdeden</strong> tut</li>
+    <li><strong>Koş</strong> ve <strong>sert</strong> at</li>
+    <li><strong>Düz ileri, burun ~10° yukarı.</strong> Dik yukarı atma — burun
+      ne kadar dikse hız o kadar çabuk kaybolur, uçak stall eder. Aşağı doğru
+      da atma — irtifa zaten yok.</li>
+    <li>Attıktan sonra <strong>elini çek</strong>, uçağa dokunma</li>
+    <li>Gaz ~0.5 s içinde tam açılır</li>
+  </ol>
+</section>
+
+<!-- ===== 9 ===== -->
+<section id="b9">
+  <h2><span class="no">09</span><span>Uçuş prosedürü — adım adım</span></h2>
+  <ol class="adimlar">
+    <li><div><h4>Kurulum</h4>
+      <p>Telemetriyi tak, uçağa pil bağla, <code>./baslat_talon.sh</code>,
+        <code>localhost:8000</code> aç.</p>
+      <span class="tamam">✓ BAĞLANTI: BAĞLI</span></div></li>
+    <li><div><h4>GPS fix</h4>
+      <p>Uçağı açık gökyüzü altına koy, 1–3 dakika bekle. Uyarı donmuşsa
+        <strong>KARE</strong>'ye bir kez bas.</p>
+      <span class="tamam">✓ GPS: 3D · uydu ≥ 10</span></div></li>
+    <li><div><h4>Kalkış parametreleri</h4>
+      <pre><code>python3 talon/kalkis_ayari.py</code></pre>
+      <span class="tamam">✓ Ölü zaman ≈ 0.20 s · THR_SLEWRATE = 0 · TKOFF_THR_MAX = 100</span></div></li>
+    <li><div><h4>Uçuş öncesi kontrol</h4>
+      <p>Arayüzde <strong>Uçuş Öncesi Kontrol</strong>. Raporu oku, kırmızı
+        satır kalmasın.</p></div></li>
+    <li><div><h4>Görev</h4>
+      <p>Ya arayüzden hazır şekil, ya <strong>Görev Planlama — Harita</strong>'dan
+        kendi rotan. Rota boş alanın üstünde mi? Sonra <strong>Görevi Yükle</strong>.</p>
+      <span class="tamam">✓ "n öğe yüklendi"</span></div></li>
+    <li><div><h4>Son fiziksel kontrol</h4>
+      <ul><li>Pervane takılı ve sıkı, dönme yönü doğru</li>
+        <li>Kumanda yüzeyleri oynuyor, yönler doğru</li>
+        <li><strong>Kumanda açık ve elinde</strong> — iptal yolun bu</li>
+        <li>Rüzgâra karşı atacaksın, önünde ≥ 50 m boş alan, insan yok</li></ul></div></li>
+    <li><div><h4>ARM</h4>
+      <p>Arayüzden ARM. Motor <strong>dönmez</strong> — normal, atış bekleniyor.
+        Reddedilirse <em>Otopilot mesajları</em>'nı oku.</p></div></li>
+    <li><div><h4>Başlat</h4>
+      <p>Şekil görevi → arayüzdeki <strong>Başlat</strong>. Harita görevi →
+        planlayıcıdaki <strong>Görevi Başlat (AUTO)</strong>.</p>
+      <span class="tamam">✓ MOD: AUTO · "motor, uçağı attığınızda dönmeye başlar"</span></div></li>
+    <li><div><h4>At</h4>
+      <p>Bölüm 08'e göre. Attıktan sonra elini çek.</p></div></li>
+    <li><div><h4>Uçuş</h4>
+      <p>3B panelden ve telemetriden takip et. Ters giderse <strong>RTL</strong>,
+        ya da kumandadan <strong>MANUAL</strong>.</p></div></li>
+    <li><div><h4>İniş</h4>
+      <p><strong>🛬 Şimdi İn</strong> (kalkış yönü yakalanmışsa) ya da elle
+        FBWA/MANUAL.</p></div></li>
+    <li><div><h4>Kapanış</h4>
+      <p><strong>Önce DISARM</strong>, sonra pil. Terminalde <code>Ctrl+C</code>.</p></div></li>
+  </ol>
+</section>
+
+<!-- ===== 10 ===== -->
+<section id="b10">
+  <h2><span class="no">10</span><span>Acil durumlar</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Durum</th><th>Ne yap</th></tr>
+    <tr><td>Uçak yanlış yöne gidiyor</td><td><strong>RTL — Eve Dön</strong></td></tr>
+    <tr><td>RTL de çalışmıyor</td><td>Kumandadan <strong>MANUAL</strong>, elle uçur</td></tr>
+    <tr><td>Otonom uçuşu durdurmak</td><td><strong>Görevi Durdur</strong> / <strong>Durdur (LOITER)</strong> → çember çizip bekler</td></tr>
+    <tr><td>Yerde pervane dönüyor, biri yaklaştı</td><td><strong>⚠ Acil — Motoru Durdur</strong></td></tr>
+    <tr><td>Batarya düşük</td><td>20.4 V'ta otomatik iniş devreye girer; beklemeden <strong>RTL</strong></td></tr>
+    <tr><td>Telemetri koptu</td><td>Failsafe devreye girer. Arayüzün belgesine göre bu kurulumda <code>FS_LONG_ACTN=1</code> (RTL) — <strong>uçuştan önce teyit et</strong></td></tr>
+  </table></div>
+  <div class="blok dur">
+    <span class="bas2">Havadayken acil DISARM'a basma</span>
+    <p>Motor durur, uçak düşer.</p>
+  </div>
+</section>
+
+<!-- ===== 11 ===== -->
+<section id="b11">
+  <h2><span class="no">11</span><span>Arıza arama — hepsi yaşandı</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Belirti</th><th>Sebep</th><th>Çözüm</th></tr>
+    <tr><td><code>/dev/serial/by-id/</code> boş</td><td>Kablo arızası ya da modül takılı değil</td><td><strong>Kabloyu değiştir</strong> — bir kez saatler yedi</td></tr>
+    <tr><td>Telemetri hiç gelmiyor</td><td>ModemManager seri porta AT komutu basıyor</td><td><code>sudo systemctl disable --now ModemManager</code></td></tr>
+    <tr><td>Telemetri seyrek/kesik</td><td>İki program aynı UDP portunda</td><td>Her tüketiciye ayrı port</td></tr>
+    <tr><td>"GPS fix yok" ama üstte <code>3D-11</code></td><td>Uyarı donmuş, telemetride tazelenmiyor</td><td><strong>KARE</strong>'ye bas ya da F5</td></tr>
+    <tr><td><strong>Başlat</strong> gri, "Araçta yüklü görev yok"</td><td>Arayüz araçtaki görevi geri okumaz</td><td>Harita görevini <strong>planlayıcının</strong> Başlat'ıyla başlat</td></tr>
+    <tr><td><code>PreArm: In landing sequence</code></td><td>Görev son öğede (RTL) takılı</td><td>Planlayıcının Başlat'ı <code>mission_set_current(1)</code> gönderip temizler</td></tr>
+    <tr><td>ARM'lı, AUTO'da, yerde bekliyor, motor dönmüyor</td><td>Zaten AUTO'daydı, kalkış tetiği hiç çalışmadı</td><td>Planlayıcının Başlat'ı araya FBWA sokarak çözer</td></tr>
+    <tr><td>Joystick açılmıyor</td><td>AUTO modunda, <code>STICK_MIXING=1</code></td><td>Önce <strong>Görevi Durdur</strong></td></tr>
+    <tr><td>AUTOLAND reddediliyor</td><td>Uçmuyor ya da kalkış yönü yakalanmamış</td><td>Bölüm 05 — DISARM yön kaydını siler</td></tr>
+    <tr><td>Autotune reddediliyor</td><td>MANUAL/CRUISE'da</td><td>AUTO/FBWA/FBWB/LOITER'a geç</td></tr>
+    <tr><td>Harita siyah</td><td>O bölgenin karoları indirilmemiş</td><td><strong>Alanı İndir</strong> ya da <code>--indir</code></td></tr>
+    <tr><td>Panel 8010 açılmıyor</td><td>Planlayıcı düşmüş</td><td><code>logs/gorev_plani.log</code></td></tr>
+  </table></div>
+  <p>Bağlantı arızasında ilk komut: <code>python3 talon/baglanti_testi.py</code></p>
+</section>
+
+<!-- ===== 12 ===== -->
+<section id="b12">
+  <h2><span class="no">12</span><span>Kapalı kalan işler</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Konu</th><th>Durum</th></tr>
+    <tr><td><strong>Havada uçuş testi</strong></td><td><strong>Yapılmadı.</strong> Bu belgedeki her şey yer testiyle doğrulandı</td></tr>
+    <tr><td><code>AIRSPEED_MIN = 15</code></td><td>Tahmin. Talon'un gerçek stall hızı ilk uçuştan ölçülecek</td></tr>
+    <tr><td><code>ARSPD_TYPE</code></td><td>Pitot yokken 0 olmalı — teyit edilecek</td></tr>
+    <tr><td><code>TKOFF_THR_MINACC</code> 11 → 9</td><td>Zayıf atışta pay bırakır; kararı ilk uçuş sonrası</td></tr>
+    <tr><td>Arayüzün görev geri okuması</td><td>Yukarı akış davranışı; düzeltmek vendored kodu ayrıştırır</td></tr>
+  </table></div>
+</section>
+
+<!-- ===== 13 ===== -->
+<section id="bg">
+  <h2><span class="no">★</span><span>Görevin icrası — iki bilgisayar birlikte</span></h2>
+
+  <div class="blok not">
+    <span class="bas2">Ana hedef</span>
+    <p><strong>Avcı drone, Talon'u otonom güdüm koduyla vuracak.</strong>
+      Her şey buna hizmet ediyor: Talon bir rota uçar, konumunu 5-10 Hz
+      yayınlar; drone o konuma GPS ile yaklaşır, hedefi kamerada görünce
+      GPS'i bırakıp yalnız görüntüyle kovalar ve temas eder.</p>
+  </div>
+
+  <h3>İki bilgisayar, hangi işi yapar</h3>
+  <div class="tablo"><table>
+    <tr><th></th><th>TALON bilgisayarı</th><th>DRONE bilgisayarı</th></tr>
+    <tr><td><strong>Neyi uçurur</strong></td><td>Hedef uçak (sabit kanat)</td><td>Avcı drone (quadcopter)</td></tr>
+    <tr><td><strong>Bağ</strong></td><td>SiK telemetri → Pixhawk</td><td>ESP32 → ELRS → F405</td></tr>
+    <tr><td><strong>Arayüz</strong></td><td><code>:8000</code> · harita <code>:8010</code></td><td><code>:8810</code> · kalibrasyon <code>:8020</code></td></tr>
+    <tr><td><strong>Ağ görevi</strong></td><td>Hedef GPS'ini <strong>yayınlar</strong></td><td>Hedef GPS'ini <strong>dinler</strong> (UDP 47800)</td></tr>
+  </table></div>
+
+  <div class="blok dikkat">
+    <span class="bas2">İki bilgisayar AYNI AĞDA olmalı</span>
+    <p>Talon tarafındaki yayıncı, hedef konumunu drone bilgisayarının
+      IP'sine UDP ile basar. Aynı Wi-Fi/switch üzerinde olmaları şart.
+      Drone bilgisayarının IP'sini öğren:</p>
+    <pre><code>ip -4 addr | grep inet</code></pre>
+    <p>ve Talon tarafını o IP ile başlat:</p>
+    <pre><code>./baslat_talon.sh &lt;seri-port&gt; &lt;DRONE-BILGISAYARI-IP&gt;</code></pre>
+    <p>IP vermezsen yayın <strong>broadcast</strong>'e (255.255.255.255)
+      gider; çoğu ağda çalışır ama bazı yönlendiriciler broadcast'i keser —
+      IP vermek her zaman daha güvenlidir.</p>
+  </div>
+
+  <h3>Görev sırası — baştan sona</h3>
+  <ol class="adimlar">
+    <li><div><h4>Her iki bilgisayarı da ayağa kaldır</h4>
+      <p>TALON: <code>./baslat_talon.sh &lt;port&gt; &lt;drone-ip&gt;</code><br>
+         DRONE: <code>./reel/skydagger/baslat_backend.sh</code> sonra
+         <code>./baslat_drone.sh</code></p></div></li>
+    <li><div><h4>İki araçta da GPS fix'i bekle</h4>
+      <span class="tamam">✓ Talon 3D · uydu ≥ 10 &nbsp;&nbsp; ✓ drone uydu ≥ 10</span></div></li>
+    <li><div><h4>Drone'da KÖKEN KUR</h4>
+      <p>Araç yerde ve hareketsizken. Bu, bütün yerel metre hesabının
+        sıfır noktası.</p></div></li>
+    <li><div><h4>Hedef akışını doğrula</h4>
+      <p>Drone panelinde hedef yaşı <strong>1 saniyenin altında</strong>
+        olmalı. Değilse Talon tarafı yayınlamıyor ya da IP yanlış.</p>
+      <span class="tamam">✓ hedef: var · yaş &lt; 1.0 s</span></div></li>
+    <li><div><h4>Talon'un görevini yükle ve başlat</h4>
+      <p>Hazır şekil (KARE/DAİRE) ya da haritadan çizilmiş rota →
+        <strong>GÖREVİ YÜKLE</strong> → ARM → <strong>BAŞLAT</strong> → at.</p></div></li>
+    <li><div><h4>Talon rotaya otursun</h4>
+      <p>İrtifasına ve hızına ulaşmasını bekle. Drone'u erken kaldırma.</p></div></li>
+    <li><div><h4>Drone'u ELLE kaldır</h4>
+      <p>ARM (basılı tut) + MANUEL. Önce uçağı tanı, kontrolü doğrula.</p></div></li>
+    <li><div><h4>OTONOM'a geç</h4>
+      <p>Dört şart sağlanmalı: panel OTONOM · pilot izni · taze setpoint ·
+        kumanda bağı. Faz <strong>İSTASYON</strong> olacak — GPS ile
+        yaklaşıyor.</p></div></li>
+    <li><div><h4>Görsel kilidi izle</h4>
+      <p>Hedef kamerada görününce faz <strong>GÖRSEL</strong>'e döner ve
+        GPS bırakılır. Panelde kutu ve kilit ölçütü görünür.</p></div></li>
+    <li><div><h4>Temas</h4>
+      <p>Faz <strong>TERMİNAL</strong>. Ters giden ilk anda MANUEL'e al ya
+        da kumandada çubuk oynat.</p></div></li>
+    <li><div><h4>Kapanış</h4>
+      <p>Drone: MANUEL → indir → DISARM. Talon: RTL ya da AUTOLAND →
+        DISARM. İki terminalde de Ctrl+C.</p></div></li>
+  </ol>
+
+  <div class="blok dur">
+    <span class="bas2">Yarışma kuralı — üstün kısıt</span>
+    <p><strong>Görsel temas varken GPS güdümü YASAK.</strong> Yalnız bbox
+      kullanılır; temas kesilince GPS serbest. Bu, kodda yapısal olarak
+      garanti edilmiştir — görsel döngünün canlı GPS erişimi yoktur.</p>
+  </div>
+
+  <div class="blok dikkat">
+    <span class="bas2">İlk otonom denemede neye bakılır</span>
+    <p><strong>Araç hedeften KAÇIYORSA</strong> yanal işaret ters demektir:
+      <code>DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh</code></p>
+    <p><strong>Menzil tuhaf görünüyorsa</strong> kamera optiği kalibre
+      edilmemiştir — drone kılavuzu bölüm 08.</p>
+    <p><strong>Faz hep İSTASYON'da kalıyorsa</strong> dedektör hedefi
+      bulamıyor: model gerçek görüntüyle eğitilmiş mi, kamera doğru cihaz mı.</p>
+  </div>
+</section>
+
+<section id="b13">
+  <h2><span class="no">13</span><span>Güvenlik — pazarlığa açık değil</span></h2>
+  <ol class="liste">
+    <li><strong>Yer testlerinde pervane çıkarılır.</strong></li>
+    <li><strong>Kumanda her zaman açık ve elde.</strong> Tek gerçek iptal yolu.</li>
+    <li><strong>Meskûn mahalde otonom uçuş yapılmaz.</strong> SHGM kuralları ve
+      düşme riski. Uçuş alanı: insan, araç, bina ve yoldan uzak açık arazi.</li>
+    <li><strong>Havadayken acil DISARM'a basılmaz.</strong></li>
+    <li><strong>Ölü zaman &gt; 1 s ise atılmaz.</strong></li>
+    <li><strong>Kimse uçağın önünde durmaz.</strong></li>
+  </ol>
+
+  <div class="altbilgi">
+    Kaynak: <code>reel/talon/</code> · Bekçiler: <code>reel/tests/test_reel.py</code>
+    (R1–R89) · Arayüz <code>talon_arayuz</code> deposundan alındı (commit
+    1e03e60); yerel değişiklikler <code>reel/talon/arayuz/KAYNAK.md</code>'de
+    yazılıdır.
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+  var baglar = [].slice.call(document.querySelectorAll("nav a"));
+  var bolumler = baglar.map(function(a){
+    return document.querySelector(a.getAttribute("href")); });
+  function etkinle(i){
+    baglar.forEach(function(a,j){ a.classList.toggle("etkin", i===j); });
+  }
+  if("IntersectionObserver" in window){
+    var gorunen = new Set();
+    var g = new IntersectionObserver(function(kayitlar){
+      kayitlar.forEach(function(k){
+        if(k.isIntersecting) gorunen.add(k.target); else gorunen.delete(k.target);
+      });
+      var enUst = -1;
+      bolumler.forEach(function(b,i){
+        if(gorunen.has(b) && (enUst<0 || b.offsetTop < bolumler[enUst].offsetTop))
+          enUst = i;
+      });
+      if(enUst>=0) etkinle(enUst);
+    }, {rootMargin:"-10% 0px -75% 0px"});
+    bolumler.forEach(function(b){ if(b) g.observe(b); });
+  }
+})();
+</script>
+
+</body>
+</html>

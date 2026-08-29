@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Avcı Drone El Kitabı</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --kagit:#eef1f4; --yuzey:#ffffff; --yuzey2:#e4e9ee;
+  --murekkep:#131a22; --gri:#4d5a68; --sonuk:#75838f;
+  --cizgi:#cdd6de; --cizgi2:#b6c2cd;
+  --mavi:#1f6fa8; --mavi-zemin:#e2edf5;
+  --tehlike:#b3341f; --tehlike-zemin:#f8e6e2;
+  --uyari:#8a6008; --uyari-zemin:#f7eeda;
+  --olur:#2c7a4b; --olur-zemin:#e2f0e8;
+  --golge:0 1px 2px rgba(19,26,34,.06), 0 6px 18px rgba(19,26,34,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --kagit:#0e1319; --yuzey:#161d25; --yuzey2:#1d262f;
+    --murekkep:#dce4ec; --gri:#9aa8b5; --sonuk:#74838f;
+    --cizgi:#2a3540; --cizgi2:#3a4854;
+    --mavi:#6fb3e0; --mavi-zemin:#12293a;
+    --tehlike:#f08a72; --tehlike-zemin:#331612;
+    --uyari:#e0ac4a; --uyari-zemin:#302209;
+    --olur:#66c191; --olur-zemin:#102a1d;
+    --golge:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --kagit:#0e1319; --yuzey:#161d25; --yuzey2:#1d262f;
+  --murekkep:#dce4ec; --gri:#9aa8b5; --sonuk:#74838f;
+  --cizgi:#2a3540; --cizgi2:#3a4854;
+  --mavi:#6fb3e0; --mavi-zemin:#12293a;
+  --tehlike:#f08a72; --tehlike-zemin:#331612;
+  --uyari:#e0ac4a; --uyari-zemin:#302209;
+  --olur:#66c191; --olur-zemin:#102a1d;
+  --golge:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--kagit); color:var(--murekkep);
+  font:400 16.5px/1.65 "Source Serif 4",Georgia,serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.etiket,th,nav,.rozet,.kod{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+/* ---------- kabuk ---------- */
+.kabuk{max-width:1240px;margin:0 auto;padding:0 22px}
+.dizilim{display:grid;grid-template-columns:232px minmax(0,1fr);gap:52px;align-items:start}
+@media(max-width:960px){.dizilim{grid-template-columns:1fr;gap:0}}
+
+/* ---------- başlık ---------- */
+header{border-bottom:1px solid var(--cizgi);background:var(--yuzey);
+  box-shadow:var(--golge)}
+.bas{padding:44px 0 34px}
+.ustetiket{font:600 11px/1 Archivo,sans-serif;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--mavi);margin-bottom:15px}
+h1{font:700 clamp(34px,5.4vw,52px)/1.04 Archivo,sans-serif;margin:0 0 12px;
+  letter-spacing:-.022em;text-wrap:balance}
+.altbas{font-size:19px;color:var(--gri);max-width:62ch;margin:0}
+
+.durum{display:flex;flex-wrap:wrap;gap:9px;margin-top:24px}
+.rozet{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;
+  border-radius:3px;font:600 11.5px/1.5 Archivo,sans-serif;letter-spacing:.05em;
+  text-transform:uppercase;border:1px solid transparent}
+.rozet.ok{background:var(--olur-zemin);color:var(--olur);border-color:var(--olur)}
+.rozet.yok{background:var(--tehlike-zemin);color:var(--tehlike);border-color:var(--tehlike)}
+.rozet.bilgi{background:var(--yuzey2);color:var(--gri);border-color:var(--cizgi2)}
+
+/* ---------- gezinme rayı ---------- */
+nav{position:sticky;top:0;max-height:100vh;overflow-y:auto;
+  padding:34px 0 40px;font-family:Archivo,sans-serif}
+nav ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+nav a{display:grid;grid-template-columns:26px 1fr;gap:9px;align-items:baseline;
+  padding:6px 9px;border-radius:3px;text-decoration:none;color:var(--gri);
+  font-size:13.5px;line-height:1.35;border-left:2px solid transparent}
+nav a:hover{background:var(--yuzey2);color:var(--murekkep)}
+nav a.etkin{background:var(--mavi-zemin);color:var(--mavi);
+  border-left-color:var(--mavi);font-weight:600}
+nav a:focus-visible{outline:2px solid var(--mavi);outline-offset:1px}
+nav .no{font:600 11px/1.5 "IBM Plex Mono",monospace;color:var(--sonuk);
+  font-variant-numeric:tabular-nums}
+nav a.etkin .no{color:var(--mavi)}
+.raybaslik{font:600 10.5px/1 Archivo,sans-serif;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--sonuk);padding:0 9px 12px}
+@media(max-width:960px){nav{position:static;max-height:none;
+  border-bottom:1px solid var(--cizgi);padding:22px 0}
+  nav ol{flex-direction:row;flex-wrap:wrap;gap:5px}
+  nav a{border-left:0;border:1px solid var(--cizgi)}}
+
+/* ---------- gövde ---------- */
+main{padding:34px 0 90px;min-width:0}
+section{scroll-margin-top:22px;padding:30px 0 8px;border-top:1px solid var(--cizgi)}
+section:first-of-type{border-top:0;padding-top:8px}
+h2{font:700 27px/1.18 Archivo,sans-serif;margin:0 0 6px;letter-spacing:-.012em;
+  text-wrap:balance;display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:baseline}
+h2 .no{font:600 15px/1 "IBM Plex Mono",monospace;color:var(--mavi);
+  font-variant-numeric:tabular-nums}
+h3{font:600 18.5px/1.3 Archivo,sans-serif;margin:30px 0 8px;letter-spacing:-.006em}
+h4{font:600 14px/1.4 Archivo,sans-serif;margin:22px 0 6px;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--gri)}
+p{margin:0 0 14px;max-width:68ch}
+ul,ol.liste{margin:0 0 15px;padding-left:22px;max-width:68ch}
+li{margin-bottom:6px}
+strong{font-weight:600}
+a{color:var(--mavi)}
+hr{border:0;border-top:1px solid var(--cizgi);margin:26px 0}
+
+code{background:var(--yuzey2);padding:1.5px 5px;border-radius:3px;
+  font-size:.855em;border:1px solid var(--cizgi)}
+pre{background:var(--yuzey);border:1px solid var(--cizgi);border-radius:5px;
+  padding:15px 17px;overflow-x:auto;margin:0 0 17px;box-shadow:var(--golge)}
+pre code{background:none;border:0;padding:0;font-size:13px;line-height:1.62;
+  color:var(--murekkep)}
+
+/* ---------- tablolar ---------- */
+.tablo{overflow-x:auto;margin:0 0 20px;border:1px solid var(--cizgi);
+  border-radius:5px;background:var(--yuzey);box-shadow:var(--golge)}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{font:600 11px/1.4 Archivo,sans-serif;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--sonuk);text-align:left;padding:11px 14px;
+  border-bottom:1px solid var(--cizgi2);white-space:nowrap;background:var(--yuzey2)}
+td{padding:10px 14px;border-bottom:1px solid var(--cizgi);vertical-align:top;
+  font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+
+/* ---------- uyarı blokları ---------- */
+.blok{border-left:3px solid;padding:14px 18px;margin:0 0 20px;border-radius:0 5px 5px 0;
+  max-width:70ch}
+.blok p:last-child{margin-bottom:0}
+.blok .bas2{font:600 11.5px/1.5 Archivo,sans-serif;letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:6px;display:block}
+.blok.dur{border-color:var(--tehlike);background:var(--tehlike-zemin)}
+.blok.dur .bas2{color:var(--tehlike)}
+.blok.dikkat{border-color:var(--uyari);background:var(--uyari-zemin)}
+.blok.dikkat .bas2{color:var(--uyari)}
+.blok.not{border-color:var(--mavi);background:var(--mavi-zemin)}
+.blok.not .bas2{color:var(--mavi)}
+.blok.iyi{border-color:var(--olur);background:var(--olur-zemin)}
+.blok.iyi .bas2{color:var(--olur)}
+
+/* ---------- adım listesi ---------- */
+.adimlar{list-style:none;margin:0 0 22px;padding:0;
+  display:flex;flex-direction:column;gap:11px;counter-reset:ad}
+.adimlar>li{counter-increment:ad;display:grid;grid-template-columns:34px 1fr;
+  gap:14px;background:var(--yuzey);border:1px solid var(--cizgi);
+  border-radius:5px;padding:14px 16px;margin:0;box-shadow:var(--golge)}
+.adimlar>li::before{content:counter(ad,decimal-leading-zero);
+  font:600 12px/1.9 "IBM Plex Mono",monospace;color:var(--mavi);
+  font-variant-numeric:tabular-nums}
+.adimlar h4{margin:0 0 5px}
+.adimlar p,.adimlar ul{margin-bottom:8px}
+.adimlar>li>div>*:last-child{margin-bottom:0}
+.tamam{display:inline-flex;gap:7px;align-items:baseline;font-size:14px;
+  color:var(--olur);font-weight:600;margin-top:4px}
+
+/* ---------- şema ---------- */
+.sema{background:var(--yuzey);border:1px solid var(--cizgi);border-radius:5px;
+  padding:18px;overflow-x:auto;margin:0 0 20px;box-shadow:var(--golge)}
+.sema pre{border:0;background:none;padding:0;margin:0;box-shadow:none}
+.sema code{color:var(--gri);font-size:12.5px;line-height:1.7}
+
+.altbilgi{border-top:1px solid var(--cizgi);margin-top:40px;padding:26px 0 0;
+  font-size:13.5px;color:var(--sonuk);max-width:70ch}
+</style>
+</head>
+<body>
+
+
+<header>
+  <div class="kabuk bas">
+    <div class="ustetiket">7" Quadcopter · Otonom Görsel + GPS Güdüm</div>
+    <h1>Avcı Drone El Kitabı</h1>
+    <p class="altbas">Drone'u hiç görmemiş birinin kurup uçurabilmesi için
+      yazıldı. Kardeş cilt: <em>Talon Uçuş El Kitabı</em> (hedef uçak).</p>
+    <div class="durum">
+      <span class="rozet bilgi">29 Ağustos 2026</span>
+      <span class="rozet ok">Yer testleri yapıldı</span>
+      <span class="rozet yok">Otonom uçuş yapılmadı</span>
+      <span class="rozet yok">Kamera kalibre edilmedi</span>
+      <span class="rozet bilgi">Betaflight · Angle mode</span>
+      <span class="rozet bilgi">Bekçiler R1–R93</span>
+    </div>
+  </div>
+</header>
+
+<div class="kabuk dizilim">
+<nav aria-label="Bölümler">
+  <div class="raybaslik">Bölümler</div>
+  <ol>
+    <li><a href="#b0"><span class="no">00</span><span>Beş dakikada özet</span></a></li>
+    <li><a href="#b1"><span class="no">01</span><span>Sistem nedir</span></a></li>
+    <li><a href="#b2"><span class="no">02</span><span>Donanım</span></a></li>
+    <li><a href="#b3"><span class="no">03</span><span>Kurulum</span></a></li>
+    <li><a href="#b4"><span class="no">04</span><span>Başlatma</span></a></li>
+    <li><a href="#b5"><span class="no">05</span><span>Araç modeli</span></a></li>
+    <li><a href="#b6"><span class="no">06</span><span>Hakem — komut kimden</span></a></li>
+    <li><a href="#b7"><span class="no">07</span><span>Panel</span></a></li>
+    <li><a href="#b8"><span class="no">08</span><span>Kamera optiği</span></a></li>
+    <li><a href="#b9"><span class="no">09</span><span>Dikey döngü</span></a></li>
+    <li><a href="#b10"><span class="no">10</span><span>Hedef GPS</span></a></li>
+    <li><a href="#b11"><span class="no">11</span><span>Fazlar ve kısıt</span></a></li>
+      <li><a href="#bg"><span class="no">★</span><span>Görevin icrası</span></a></li>
+<li><a href="#b12"><span class="no">12</span><span>Uçuş prosedürü</span></a></li>
+    <li><a href="#b13"><span class="no">13</span><span>Acil durumlar</span></a></li>
+    <li><a href="#b14"><span class="no">14</span><span>Arıza arama</span></a></li>
+    <li><a href="#b15"><span class="no">15</span><span>Kapalı kalan işler</span></a></li>
+    <li><a href="#b16"><span class="no">16</span><span>Güvenlik</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="b0">
+  <h2><span class="no">00</span><span>Beş dakikada özet</span></h2>
+  <pre><code># Terminal 1 — Skydagger backend (ELRS köprüsü)
+cd ~/projects/drones_of_war_entegrasyon/reel/skydagger
+./baslat_backend.sh
+
+# Terminal 2 — drone yer kontrolü
+cd ~/projects/drones_of_war_entegrasyon/reel
+./baslat_drone.sh</code></pre>
+  <p>Tarayıcı: <code>http://localhost:8810</code></p>
+  <div class="tablo"><table>
+    <tr><th>Yaparsın</th><th>Nerede</th></tr>
+    <tr><td>Elle uçurmak</td><td>Paneldeki iki joystick, ya da USB kumanda</td></tr>
+    <tr><td>Otonom güdüme geçmek</td><td><strong>OTONOM</strong> düğmesi + pilot izin anahtarı</td></tr>
+    <tr><td>Kamerayı kalibre etmek</td><td><code>python3 gercek/kamera_ayari.py</code> → :8020</td></tr>
+    <tr><td>Acil durdurmak</td><td><strong>MANUEL</strong>'e bas, ya da kumandadan çubuk oynat</td></tr>
+  </table></div>
+</section>
+
+<section id="b1">
+  <h2><span class="no">01</span><span>Sistem nedir — parça parça</span></h2>
+  <h3>Komut zinciri — yerden uçağa</h3>
+  <div class="sema"><pre><code>[panel :8810]  ya da  [USB kumanda]
+        │
+        ▼
+   [HAKEM  komut.py]         kimin sözü geçer — dört şart
+        │
+        ▼
+   [CRSF paketleyici]        16 kanal × 11 bit + CRC-8/DVB-S2
+        │
+        ▼
+[Skydagger backend]          UDP 8767  "RC_US c1..c16"
+        │
+        ▼
+     [ESP32]  ──ELRS 2.4 GHz──►  [F405 / Betaflight]</code></pre></div>
+
+  <h3>Veri zinciri — uçaktan yere</h3>
+  <div class="sema"><pre><code>[F405] ──CRSF telemetri──► [ESP32] ──TCP 8766──► [Skydagger backend]
+                                                        │
+                                                        ▼
+                                              [baglanti.py]  konum, hız,
+                                                             yatış, batarya
+[FPV kamera] ──analog──► [USB yakalama kartı] ──► [kamera_yakala.py]
+[Talon bilgisayarı] ──UDP 47800, 5-10 Hz──► [hedef.py]  hedefin GPS'i</code></pre></div>
+
+  <h3>Terimler</h3>
+  <div class="tablo"><table>
+    <tr><th>Terim</th><th>Ne demek</th></tr>
+    <tr><td><strong>ELRS</strong></td><td>ExpressLRS — uzun menzilli açık kaynak RC bağı, 2.4 GHz.</td></tr>
+    <tr><td><strong>CRSF</strong></td><td>Crossfire — ELRS'in konuştuğu paket biçimi. 16 kanal, her biri 11 bit.</td></tr>
+    <tr><td><strong>ESP32</strong></td><td>Komitenin verdiği köprü kartı. Bilgisayardan aldığı komutu ELRS'e çevirir.</td></tr>
+    <tr><td><strong>Skydagger backend</strong></td><td>Komitenin verdiği program; ESP32 ile bilgisayar arasında durur.</td></tr>
+    <tr><td><strong>Angle mode</strong></td><td>Betaflight kipi: çubuk <em>açı</em> ister, uçak o açıyı tutar. Şartname <strong>yalnız bunu</strong> kullanmamıza izin veriyor.</td></tr>
+    <tr><td><strong>bbox (kutu)</strong></td><td>Dedektörün hedefin etrafına çizdiği dikdörtgen. Görsel güdümün tek girdisi.</td></tr>
+    <tr><td><strong>IBVS</strong></td><td>Image-Based Visual Servoing — hedefi <em>görüntüdeki yerine</em> göre kovalama.</td></tr>
+    <tr><td><strong>Kilit</strong></td><td>Hedefin belirli süre kesintisiz ve yeterli güvenle görülmesi.</td></tr>
+    <tr><td><strong>Faz</strong></td><td>Güdümün o anki modu: İSTASYON · GÖRSEL (alt fazlar KİLİT / TERMİNAL).</td></tr>
+  </table></div>
+
+  <h3>Portlar</h3>
+  <div class="tablo"><table>
+    <tr><th>Port</th><th>Kim</th><th>Ne</th></tr>
+    <tr><td><strong>8810</strong></td><td><code>drone_yki.py</code></td><td>Operatör paneli</td></tr>
+    <tr><td><strong>8020</strong></td><td><code>kamera_ayari.py</code></td><td>Kamera kalibrasyon aracı</td></tr>
+    <tr><td>8765</td><td>Skydagger backend</td><td>HTTP</td></tr>
+    <tr><td>8766</td><td>Skydagger backend</td><td>TCP — CRSF telemetri</td></tr>
+    <tr><td>8767</td><td>Skydagger backend</td><td>UDP — RC komutları</td></tr>
+    <tr><td><strong>47800</strong></td><td><code>hedef.py</code></td><td>Talon'dan gelen hedef GPS'i</td></tr>
+  </table></div>
+</section>
+
+<section id="b2">
+  <h2><span class="no">02</span><span>Donanım</span></h2>
+  <h3>Drone</h3>
+  <ul>
+    <li><strong>7 inç quadcopter</strong>, <strong>F405</strong> uçuş kontrolcüsü, Betaflight</li>
+    <li><strong>ELRS alıcı</strong> (Radiomaster Ranger Micro ailesi)</li>
+    <li><strong>FPV kamera</strong> — gövdeye <strong>sabit</strong>, gimbal <strong>yok</strong>, burnun bir miktar <strong>yukarısına</strong> bakar (bölüm 08)</li>
+    <li>Analog video vericisi</li>
+  </ul>
+  <h3>Yerde</h3>
+  <ul>
+    <li>Laptop</li>
+    <li><strong>ESP32 köprü kartı</strong> — USB ile laptopa, ELRS modülüyle eşli</li>
+    <li><strong>USB video yakalama kartı</strong> — FPV alıcısının çıkışı</li>
+    <li><strong>Kumanda</strong> — USB ile laptopa, <strong>yalnız joystick girdisi</strong> olarak</li>
+  </ul>
+  <div class="blok not">
+    <span class="bas2">Kumanda uçağa RF ile bağlı değil</span>
+    <p>Bu kurulumda komutlar bilgisayardan ESP32 üzerinden gider. Kumanda
+      sadece bir USB oyun çubuğudur — ama panelden <strong>önceliklidir</strong>
+      (bölüm 06).</p>
+  </div>
+</section>
+
+<section id="b3">
+  <h2><span class="no">03</span><span>Kurulum</span></h2>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel
+pip install -r requirements.txt
+sudo usermod -aG dialout $USER      # ÇIKIP TEKRAR GİR</code></pre>
+
+  <h3>Skydagger backend — bir kez, ~2 dakika</h3>
+  <pre><code>./reel/skydagger/kur.sh</code></pre>
+  <p>Komitenin verdiği Windows <code>.exe</code>'sinin içindeki Python kodunu
+    çıkarır ve yanına taşınabilir bir Python 3.12 + <code>pyserial</code>
+    kurar. <strong>Wine gerekmez</strong> — iki kez denendi ve olmadı
+    (Wine 6.0.3'te <code>propsys.dll</code> eksik; GE-Proton GLIBC 2.38
+    istiyor, sistemde 2.35 var).</p>
+
+  <h3>Kumanda eksen haritası</h3>
+  <pre><code>python3 araclar/kumanda_kalib.py</code></pre>
+  <p>Her eksen için ayrı ayrı sorar. Sonuç <strong>ölçüldü, varsayılmadı</strong>:</p>
+  <div class="tablo"><table>
+    <tr><th>Eksen</th><th>Numara</th></tr>
+    <tr><td>ROLL</td><td>0</td></tr>
+    <tr><td>PITCH</td><td>1</td></tr>
+    <tr><td>THROTTLE</td><td>2</td></tr>
+    <tr><td>YAW</td><td>3</td></tr>
+    <tr><td>ARM</td><td>4</td></tr>
+    <tr><td>KİP (otonom izni)</td><td>−1 = atanmadı</td></tr>
+  </table></div>
+  <div class="blok dur">
+    <span class="bas2">ARM ile KİP aynı eksene atanamaz</span>
+    <p>Araç bunu reddeder: otonom izni ARM anahtarına binerse, arm ettiğin
+      anda otonom da açılır.</p>
+  </div>
+</section>
+
+<section id="b4">
+  <h2><span class="no">04</span><span>Başlatma</span></h2>
+  <p><strong>Terminal 1 — Skydagger backend:</strong></p>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel/skydagger
+./baslat_backend.sh</code></pre>
+  <p>Başındaki temizleme adımı 8765 portunu tutan eski süreci kapatır;
+    <code>--kapat</code> ile yalnız kapatılır.</p>
+  <p><strong>Terminal 2 — drone yer kontrolü:</strong></p>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel
+./baslat_drone.sh</code></pre>
+  <pre><code>./baslat_drone.sh --kapat                     # yalnız kapat
+DOW_KAM_KAYNAK=/dev/video2 ./baslat_drone.sh  # kamerayı elle seç
+DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh       # yanal işaret ters çevir</code></pre>
+  <p class="tamam">✓ Tamam ölçütü: panelde LINK yeşil, SAFE çerçevesi görünüyor, FPV akıyor.</p>
+</section>
+
+<section id="b5">
+  <h2><span class="no">05</span><span>Araç modeli — neden ayrı bir şey</span></h2>
+  <p>Güdüm yasası "saniyede kaç metre" der. <strong>Araç modeli</strong> onu
+    "çubuk nerede durmalı"ya çevirir. Simülasyondan gerçeğe taşırken
+    <strong>yasa değişmez, model yeniden ölçülür.</strong></p>
+  <div class="tablo"><table>
+    <tr><th>Sabit</th><th>Değer</th><th>Nereden</th></tr>
+    <tr><td><code>DOW_CEV_MODEL</code></td><td><code>aci</code></td><td>Angle mode'da çubuk açıya eşlenir</td></tr>
+    <tr><td><code>DOW_CEV_ACI_MAX</code></td><td>60</td><td>Betaflight <code>angle_limit = 60</code></td></tr>
+    <tr><td><code>DOW_CEV_Y_ISARET</code></td><td><strong>+1.0</strong></td><td><strong>Ölçüldü</strong> — 29 Ağu 2026 yer testi (DoW'da −1 idi)</td></tr>
+    <tr><td><code>DOW_GPS_KAYNAK</code></td><td><code>gercek</code></td><td>Simülasyondaki "truth" ve filtre gerçekte yok</td></tr>
+  </table></div>
+  <div class="blok dikkat">
+    <span class="bas2">Kesin kanıt ilk otonom uçuş</span>
+    <p><code>Y_ISARET</code> yer testinde doğrulandı ama güdümün hatayı
+      kapatıp kapatmadığını ancak uçuş gösterir. İlk denemede araç hedeften
+      <strong>kaçıyorsa</strong> ilk bakılacak yer burasıdır:
+      <code>DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh</code></p>
+  </div>
+</section>
+
+<section id="b6">
+  <h2><span class="no">06</span><span>Hakem — komut kimden geliyor</span></h2>
+  <p>Üç kaynak var: <strong>panel joystickleri</strong>, <strong>USB
+    kumanda</strong>, <strong>otonom güdüm</strong>. <code>gercek/komut.py</code>
+    her karede hangisinin geçerli olduğuna karar verir.</p>
+
+  <h3>Otonom için dört şart — biri bile düşerse otonom yok</h3>
+  <ol class="liste">
+    <li><strong>Panel OTONOM istiyor</strong> — düğmeye basılmış</li>
+    <li><strong>Pilot izin veriyor</strong> — kumandadaki veto anahtarı</li>
+    <li><strong>Güdüm taze setpoint üretiyor</strong> — hesap akıyor</li>
+    <li><strong>Kumandayla bağ teslim süresi içinde</strong> — kumanda kopmamış</li>
+  </ol>
+  <div class="blok dur">
+    <span class="bas2">Bu kapı gerçek bir emniyet hatasından sonra yazıldı</span>
+    <p>Bir bekçi (R39) yakaladı: eski hâlde teslim zaman aşımı yalnız bir
+      dalda vardı ve izin/arm mandallı olduğu için o dala hiç girilmiyordu —
+      <strong>kumanda kopukken otonom süresiz devam ediyordu.</strong></p>
+    <p>Otonom sürerken kumanda kopmuşsa panel bunu
+      <code>sebep: kumanda_kopuk</code> diye <strong>yazar</strong> —
+      operatör görmeden fark edemezdi.</p>
+  </div>
+
+  <h3>Kumanda devralması</h3>
+  <p>Kumanda takılıyken bile kontrol <strong>panelden</strong>dir. Ama
+    kumandanın joystickleri <strong>oynamaya başlarsa</strong> kumanda devralır.</p>
+  <div class="tablo"><table>
+    <tr><th>Ayar</th><th>Değer</th><th>Ne</th></tr>
+    <tr><td><code>KMD_HAREKET_ESIK</code></td><td>0.04</td><td>Bu kadar oynarsa "hareket" sayılır</td></tr>
+    <tr><td><code>KMD_HAKIMIYET_S</code></td><td>3.0 s</td><td>Hareketten sonra kumanda bu kadar hâkim kalır</td></tr>
+    <tr><td><code>KMD_ARA_S</code></td><td>2.0 s</td><td>Kumanda kaybolursa yeniden arama aralığı</td></tr>
+    <tr><td><code>PANEL_ASIM_S</code></td><td>1.5 s</td><td>Panel bu kadar susarsa komutu düşer</td></tr>
+  </table></div>
+  <div class="blok dikkat">
+    <span class="bas2">Hareket, nesneye değil DEĞERE bakar</span>
+    <p>Bir bekçi (R63) bunu yakaladı: tek tampon kullanan bir kaynakta nesne
+      hep aynı kalır ve hareket <strong>hiç görünmezdi</strong>.</p>
+  </div>
+</section>
+
+<section id="b7">
+  <h2><span class="no">07</span><span>Panel — her özellik</span></h2>
+  <h3>Üst rozetler</h3>
+  <div class="tablo"><table>
+    <tr><th>Rozet</th><th>Ne</th></tr>
+    <tr><td><strong>LINK</strong></td><td>ELRS bağı canlı mı</td></tr>
+    <tr><td><strong>GPS</strong></td><td>Uydu sayısı ve fix</td></tr>
+    <tr><td><strong>KİP</strong></td><td>MANUEL / OTONOM</td></tr>
+    <tr><td><strong>girdi:</strong></td><td>Komut o an kimden geliyor — panel / kumanda / otonom</td></tr>
+    <tr><td><strong>DISARM / ARM</strong></td><td>Motor kilidi</td></tr>
+    <tr><td><strong>SUNUCU</strong></td><td>Yarışma sunucusuna bağlantı</td></tr>
+  </table></div>
+
+  <h3>FPV</h3>
+  <p>Yakalama kartından gelen canlı görüntü; üstüne dedektörün kutusu ve
+    kilit ölçütü çizilir.</p>
+  <div class="blok not">
+    <span class="bas2">Neden tek kare tek kare</span>
+    <p>Sebep ölçüldü: Chrome'un origin başına <strong>6 bağlantı</strong>
+      sınırı. Kalıcı MJPEG akışı + istek yığılması paneli donduruyordu. Şimdi
+      durum tek bir WebSocket'ten akıyor; 20 saniyelik yükte 200 WS mesajı +
+      288 kare, <strong>0 hata</strong>.</p>
+  </div>
+
+  <h3>Düğmeler</h3>
+  <div class="tablo"><table>
+    <tr><th>Düğme</th><th>Ne yapar</th></tr>
+    <tr><td><strong>MANUEL</strong></td><td>Kontrol sende — otonom kapalı</td></tr>
+    <tr><td><strong>OTONOM</strong></td><td>Otonom talebi. Dört şart sağlanmadan çalışmaz</td></tr>
+    <tr><td><strong>ARM (BASILI TUT)</strong></td><td>Basılı tuttuğun sürece arm. Bırakınca düşer</td></tr>
+    <tr><td><strong>KÖKEN KUR</strong></td><td>Yerel çerçevenin sıfır noktasını buraya kur. <strong>≥10 uydu şart</strong></td></tr>
+    <tr><td><strong>KUMANDAYI YOK SAY</strong></td><td>Kumanda devralmasını kapat (tezgâh kipi)</td></tr>
+  </table></div>
+  <div class="blok dur">
+    <span class="bas2">KÖKEN uçuş ortasında değiştirilmez</span>
+    <p>Köken, GPS koordinatlarını metreye çeviren yerel çerçevenin başlangıç
+      noktasıdır; kalkışta <strong>yerde</strong> bir kez kurulur. Uçuş
+      ortasında değiştirmek güdümün altındaki zemini kaydırmaktır: bütün
+      konumlar bir anda sıçrar ve güdüm dev bir hata görüp tam komut verir.</p>
+  </div>
+</section>
+
+<section id="b8">
+  <h2><span class="no">08</span><span>Kamera optiği — en büyük açık eksik</span></h2>
+  <div class="blok dur">
+    <span class="bas2">Şu an simülasyon değerleriyle uçuyor</span>
+    <p><code>F_PX = 540.4 px · TILT = 26.50° · MENZIL_C = 997 px·m · 1920×1080</code>
+      — hepsi <strong>DoW simülasyonunda</strong> ölçüldü. Gerçek FPV
+      kamerası başka mercek, başka montaj açısı, başka çözünürlük.</p>
+  </div>
+  <p>Menzil <code>R = MENZIL_C / kutu_genisligi</code> formülüyle çıkıyor.
+    <code>F_PX</code>'te %30 hata → menzilde %30 hata: güdüm hedefi
+    olduğundan yakın ya da uzak sanır. <strong>Hata sessizdir, hiçbir yerde
+    patlamaz.</strong></p>
+  <div class="blok dikkat">
+    <span class="bas2">Çözünürlük tuzağı — ölçüldü</span>
+    <p>Kart 1280×720 verirken 1920×1080 sabitleri kullanılırsa aynı hedef
+      40 px yerine 27 px görünür ve menzil <strong>25 m yerine 37 m</strong>
+      denir — <strong>%50 hata</strong>. <code>drone_yki.py</code> artık bu
+      uyuşmazlıkta yüksek sesle uyarıyor.</p>
+  </div>
+
+  <h3>Nasıl ölçülür — 5 dakika, dedektöre gerek yok</h3>
+  <pre><code>cd ~/projects/drones_of_war_entegrasyon/reel
+python3 gercek/kamera_ayari.py        # tarayıcı: localhost:8020</code></pre>
+
+  <h4>ODAK (F_PX) kipi</h4>
+  <p>Delikli iğne (pinhole) modelinden: genişliği <code>S</code> metre olan
+    bir cisim, <code>R</code> metre uzakta, görüntüde <code>w</code> piksel
+    görünür. Benzer üçgenler:</p>
+  <div class="sema"><pre><code>w / F_PX = S / R        ⟹        F_PX = w · R / S</code></pre></div>
+  <p>Talon'u <strong>şerit metreyle ölçülmüş</strong> bir mesafeye koy,
+    görüntüde <strong>kanat uçlarına tıkla</strong> (= <code>w</code> piksel),
+    kanat açıklığını bil (<code>S = 1.718 m</code>). Üç dört farklı mesafede
+    tekrarla.</p>
+  <div class="blok dikkat">
+    <span class="bas2">İki varsayım</span>
+    <p><strong>1.</strong> Mercek bozulması yok sayılıyor ve
+      <code>fx = fy</code> (kare piksel) kabul ediliyor. Geniş açı FPV
+      merceklerinde kadrajın <strong>kenarında</strong> bu bozulur — hedefi
+      kadrajın <strong>ortasına</strong> koyarak ölç.</p>
+    <p><strong>2.</strong> Mesafeyi <strong>tahmin etme</strong>. O sayı
+      doğrudan <code>F_PX</code>'e çarpan giriyor; %20 yanlış mesafe %20
+      yanlış menzil demektir.</p>
+  </div>
+
+  <h4>TILT kipi</h4>
+  <p>Uçağı yerde, <strong>gövdesi yatay</strong> koy. Kamera burnun
+    <code>TILT</code> derece yukarısına baktığı için gerçek ufuk, görüntünün
+    ortasının <strong>altında</strong> kalır. Ufuk çizgisine tıkla:</p>
+  <div class="sema"><pre><code>TILT = atan( (CY − y_ufuk) / F_PX )        CY = görüntü_yüksekliği / 2</code></pre></div>
+  <p><strong>Varsayım:</strong> gövdenin yatay olduğu. Uçak burnu yukarı
+    duruyorsa o açı <code>TILT</code>'e karışır — şüphedeysen telefon su
+    terazisiyle kontrol et.</p>
+
+  <h4>MENZIL_C</h4>
+  <p>Geometrik hâli doğrudan <code>F_PX · S</code>'tir. Ama dedektörün kutusu
+    gerçek kanat açıklığından biraz <strong>geniştir</strong> (gövdeyi ve payı
+    da alır). Simülasyonda ölçüldü: geometrik
+    <code>540.4 · 1.718 = 928.4</code> iken dedektör kutularıyla fit edilen
+    <code>997.0</code> — <strong>%7.4 pay</strong>. Araç bu payı uygular.</p>
+  <div class="blok dur">
+    <span class="bas2">Dedektör çalışınca yeniden fit et</span>
+    <p><code>MENZIL_C</code>, dedektör gerçek görüntüde çalışmaya başlayınca
+      bu araçla <strong>değil</strong>, gerçek kutulardan yeniden fit
+      edilmelidir.</p>
+  </div>
+
+  <h3>Sonucu uygula</h3>
+  <pre><code>export DOW_OPTIK_W=1280
+export DOW_OPTIK_H=720
+export DOW_OPTIK_F_PX=402.9
+export DOW_OPTIK_TILT=18.29
+export DOW_OPTIK_MENZIL_C=743.4</code></pre>
+  <p><code>baslat_drone.sh</code> içinde hazır yorum satırları var; oradaki
+    <code>#</code>'leri kaldır. <strong>Ölçümü hangi çözünürlükte yaptıysan
+    uçuşta da o kullanılmalı</strong> — <code>F_PX</code> çözünürlükle
+    ölçeklenir.</p>
+  <div class="blok iyi">
+    <span class="bas2">Aracın matematiği doğrulandı</span>
+    <p>Bilinen bir kameradan üretilmiş sentetik ölçümlerde <code>F_PX</code>
+      <strong>%0.06</strong>, <code>TILT</code> <strong>0.01°</strong> hatayla
+      geri çıkıyor. Bir tıklama kanat ucunu ıskalarsa <strong>medyan</strong>
+      %0.2 hatayla kurtarır (aynı veride ortalama %10 sapıyor) ve panel
+      ölçümler arası sapma %10'u geçince kırmızı yazar.</p>
+  </div>
+</section>
+
+<section id="b9">
+  <h2><span class="no">09</span><span>Angle mode dikey döngü</span></h2>
+  <p><strong>Sorun:</strong> Angle mode'da gaz çubuğu <strong>hız değil itki
+    ister</strong>. Simülasyonda "şu kadar m/s tırman" diyebiliyorduk;
+    gerçekte "şu kadar gaz ver" diyoruz ve ortaya çıkan hız pilin, ağırlığın
+    ve yatış açısının fonksiyonu.</p>
+  <div class="sema"><pre><code>P      = kırp(KP · hata, ±P_YETKI)
+I     += KI · hata · dt              (koşullu; ±I_MAX ile sınırlı)
+çubuk  = eğim_sınırla(kırp(P + I + ileri_besleme, THR_MIN, THR_MAX))</code></pre></div>
+  <div class="tablo"><table>
+    <tr><th>Sabit</th><th>Değer</th><th>Ne</th></tr>
+    <tr><td><code>KP</code></td><td>0.0510</td><td><strong>Ani</strong> yetki. τ = 1.0 s hedefinden: KP = 1/(19.6·τ)</td></tr>
+    <tr><td><code>KI</code></td><td>0.0051</td><td><strong>Yavaş</strong> yetki</td></tr>
+    <tr><td><code>P_YETKI</code></td><td>±0.15</td><td>Tek seferde ne kadar sert düzeltme</td></tr>
+    <tr><td><code>I_MAX</code></td><td>±0.35</td><td>Asılı gazı arama aralığı — geniş olmalı</td></tr>
+    <tr><td><code>THR_MIN/MAX</code></td><td>∓0.50</td><td><strong>Mutlak emniyet.</strong> Ne olursa olsun aşılmaz</td></tr>
+  </table></div>
+  <p>Tasarım bağıntısı: <code>I_MAX + P_YETKI = 0.35 + 0.15 = 0.50 = THR_MAX</code>.</p>
+  <p><strong>Yatış ileri beslemesi:</strong> araç <code>θ</code> derece
+    yatınca dikey itki <code>cos θ</code> kadar azalır; telafi
+    <code>1/cos(θ)^0.5</code> ile <em>önden</em> verilir — integralin hatayı
+    fark edip yakalamasını beklemez.</p>
+  <p><strong>Yumuşak devir:</strong> otonoma geçerken integral, pilotun o anki
+    çubuğundan tohumlanır. Aksi hâlde araç bir anda gaz değiştirir.</p>
+  <div class="blok dikkat">
+    <span class="bas2">Telemetri bekçisi</span>
+    <p><code>TELEM_MIN_HZ = 4.0</code>. Dikey hız bilgisi bundan seyrekse
+      döngü <strong>pasife düşer</strong> ve <code>n_pasif_cagri</code> sayacı
+      artar — kör integral en tehlikeli hâldir.</p>
+  </div>
+</section>
+
+<section id="b10">
+  <h2><span class="no">10</span><span>Hedef GPS — Talon'dan drone'a</span></h2>
+  <p>Talon bilgisayarındaki <code>yayinci.py</code>, hedefin konumunu
+    <strong>UDP 47800</strong>'e basar; drone tarafında <code>hedef.py</code>
+    dinler.</p>
+  <p><strong>Yayın biçimi = yarışma sunucusunun biçimi.</strong> Böylece
+    drone tarafındaki kod bugün ile yarışma günü arasında <strong>hiç
+    değişmez</strong>; yalnız verinin geldiği adres değişir.</p>
+  <div class="sema"><pre><code>{"sunucu_saati": {...},
+ "hedef_iha_verileri": [{"takim_no":0, "enlem":41.002892, "boylam":28.656232,
+                         "irtifa_ev":80.0, "hiz":22.0, "saat_farki":44}]}</code></pre></div>
+
+  <div class="blok dur">
+    <span class="bas2">Bayatlık — sessiz tuzak</span>
+    <p><code>saat_farki</code> verinin <strong>kendi yaşı</strong>dır (ms).
+      Paket az önce gelmiş olabilir ama <strong>içindeki veri</strong>
+      saniyelerce eski olabilir — yayıncı kalp atışı da basıyor ve telsiz
+      koparsa son bilinen konumu tekrarlar.</p>
+    <p><strong>28 m/s giden bir hedef 500 ms'de 14 m yol alır.</strong> Bayat
+      paketi taze saymak, hedefi 14 m yanlış yerde aramaktır. Bu yüzden
+      yaş = ulaşma yaşı + <code>saat_farki</code>; <code>MAX_YAS_S = 1.5</code>
+      aşılırsa hedef <strong>YOK</strong> sayılır.</p>
+  </div>
+
+  <p><strong>Neden UDP, neden TCP değil:</strong> 5 Hz'lik bir konum akışında
+    TCP'nin yeniden gönderimi <strong>zararlıdır</strong> — kaybolan bir
+    paketin geç gelen kopyası taze paketin önüne geçer ve güdüm eski dünyaya
+    nişan alır. Kaybolan paket atılmalıdır; bir sonrakisi zaten 200 ms sonra
+    geliyor.</p>
+
+  <div class="blok iyi">
+    <span class="bas2">Ölçüldü — 29 Ağustos 2026</span>
+    <p>Uçtan uca: <strong>6 saniyede 60 paket (10 Hz), 0 red, yaş 0.1 s</strong>
+      (ulaşma 0.06 + veri 0.04).</p>
+  </div>
+</section>
+
+<section id="b11">
+  <h2><span class="no">11</span><span>Güdüm fazları ve yarışma kısıtı</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Faz</th><th>Ne yapar</th></tr>
+    <tr><td><strong>İSTASYON</strong></td><td>Hedef görünmüyor — GPS ile yaklaş, takip istasyonuna otur</td></tr>
+    <tr><td><strong>GÖRSEL</strong></td><td>Hedef görünüyor — yalnız kutuyla kovala</td></tr>
+    <tr><td>↳ <strong>KİLİT</strong></td><td>Mesafeyi tut, kilit ölçütünü sağla</td></tr>
+    <tr><td>↳ <strong>TERMİNAL</strong></td><td>Son yaklaşma</td></tr>
+  </table></div>
+  <div class="blok dur">
+    <span class="bas2">Üstün kısıt — yarışma kuralı</span>
+    <p><strong>Görsel temas varken GPS güdümü YASAK.</strong> Yalnız bbox
+      kullanılır; temas kesilince GPS serbest.</p>
+    <p>Bu yapısal olarak garanti edilmiştir: görsel döngü hedefe dair veriyi
+      devirde <strong>bir kez sayı olarak</strong> alır; canlı GPS erişimi
+      <strong>yoktur</strong>. Bir bekçi
+      (<code>tests/test_bbox_ibvs.py</code> B5) bunu sınar.</p>
+  </div>
+</section>
+
+<section id="b12">
+  <h2><span class="no">12</span><span>Uçuş prosedürü</span></h2>
+  <div class="blok dur">
+    <span class="bas2">Yer testlerinde pervane çıkarılır — istisnasız</span>
+  </div>
+  <ol class="adimlar">
+    <li><div><h4>Skydagger backend</h4><p>Terminal 1. <code>LINK</code> yeşil olacak.</p></div></li>
+    <li><div><h4>Drone yer kontrolü</h4><p>Terminal 2 → <code>localhost:8810</code></p></div></li>
+    <li><div><h4>Kamerayı doğrula</h4><p>FPV görüntüsü akıyor mu, çözünürlük uyarısı var mı.</p></div></li>
+    <li><div><h4>GPS fix</h4><span class="tamam">✓ uydu ≥ 10</span></div></li>
+    <li><div><h4>KÖKEN KUR</h4><p>Araç yerde ve hareketsizken.</p></div></li>
+    <li><div><h4>Kumandayı sına</h4><p>Çubukları oynat — panel joystickleri takip etmeli.</p></div></li>
+    <li><div><h4>Yönleri doğrula</h4><p>Betaflight'ta roll/pitch/yaw doğru yönde mi.</p></div></li>
+    <li><div><h4>Pervaneleri tak</h4><p>Alanı boşalt.</p></div></li>
+    <li><div><h4>Elle uç</h4><p><strong>ARM (BASILI TUT)</strong> + <strong>MANUEL</strong> ile havalan, uçağı tanı.</p></div></li>
+    <li><div><h4>Talon'u uçur</h4><p>Hedef GPS'inin aktığını panelden doğrula.</p></div></li>
+    <li><div><h4>OTONOM</h4><p>Dört şart sağlanmalı. İzle: kutu var mı, faz ne, <code>girdi:</code> ne diyor.</p></div></li>
+    <li><div><h4>İniş</h4><p>MANUEL'e al, elle indir, <strong>DISARM</strong>.</p></div></li>
+  </ol>
+  <p><strong>Otonomdan çıkmanın iki yolu:</strong> panelde <strong>MANUEL</strong>,
+    ya da <strong>kumandada çubuk oynatmak</strong> (3 saniye hâkimiyet).</p>
+</section>
+
+<section id="b13">
+  <h2><span class="no">13</span><span>Acil durumlar</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Durum</th><th>Ne yap</th></tr>
+    <tr><td>Araç hedeften <strong>kaçıyor</strong></td><td>MANUEL. Sonra <code>DOW_CEV_Y_ISARET=-1.0</code> ile yeniden dene</td></tr>
+    <tr><td>Otonom tuhaf davranıyor</td><td>Kumandada çubuk oynat — 3 s hâkimiyet alır</td></tr>
+    <tr><td>Panel dondu</td><td>Kumanda zaten önceliklidir; kumandayla uçur</td></tr>
+    <tr><td>ELRS koptu</td><td>ESP32 son çerçeveyi ~200 ms tutar, sonra failsafe</td></tr>
+    <tr><td>Görüntü kesildi</td><td>Faz İSTASYON'a düşer, GPS ile devam eder</td></tr>
+    <tr><td>Kontrolsüz</td><td>ARM düğmesini bırak → disarm</td></tr>
+  </table></div>
+</section>
+
+<section id="b14">
+  <h2><span class="no">14</span><span>Arıza arama — hepsi yaşandı</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Belirti</th><th>Sebep</th><th>Çözüm</th></tr>
+    <tr><td>Backend açılmıyor, "port in use"</td><td>Eski süreç 8765'i tutuyor</td><td>Başlatıcının temizleme adımı; ya da <code>--kapat</code></td></tr>
+    <tr><td>Backend hiç çıktı vermiyor</td><td>readline TTY istiyor, boruda susuyor</td><td>Başlatıcı <code>script -qfec</code> ile sarmalıyor</td></tr>
+    <tr><td>Panelde <strong>dizüstünün</strong> kamerası çıkıyor</td><td>Yakalama kartı bulunamadı</td><td><code>DOW_KAM_KAYNAK=/dev/video2</code></td></tr>
+    <tr><td><code>ls /dev/input/js*</code> boş</td><td>Kumanda USB kablosu</td><td><strong>Kabloyu değiştir</strong> — bir kez bozuk çıktı</td></tr>
+    <tr><td>Panel joystickleri kumandayla oynamıyor</td><td>Eksen haritası yanlış</td><td><code>python3 araclar/kumanda_kalib.py</code></td></tr>
+    <tr><td>Panel bir süre sonra donuyor</td><td><em>(çözüldü)</em> Chrome 6 bağlantı sınırı</td><td>Tek WebSocket'e geçildi</td></tr>
+    <tr><td><code>uydu = 0</code>, KÖKEN KUR reddediyor</td><td>Kapalı ortam, fix yok</td><td>Dışarı çık — reddetmesi doğru</td></tr>
+    <tr><td>Menzil tuhaf görünüyor</td><td><strong>Kamera optiği kalibre edilmemiş</strong></td><td>Bölüm 08</td></tr>
+    <tr><td>Açılışta çözünürlük uyarısı</td><td>Kart ≠ kalibrasyon çözünürlüğü</td><td><code>DOW_KAM_W/H</code> zorla ya da yeniden kalibre et</td></tr>
+    <tr><td>Hedef GPS'i gelmiyor</td><td>Talon tarafı kapalı ya da IP yanlış</td><td>Talon'da <code>./baslat_talon.sh &lt;port&gt; &lt;drone-ip&gt;</code></td></tr>
+  </table></div>
+</section>
+
+<section id="b15">
+  <h2><span class="no">15</span><span>Kapalı kalan işler</span></h2>
+  <div class="tablo"><table>
+    <tr><th>Konu</th><th>Durum</th></tr>
+    <tr><td><strong>Otonom uçuş</strong></td><td><strong>Yapılmadı</strong></td></tr>
+    <tr><td><strong>Kamera optiği</strong></td><td><strong>Ölçülmedi</strong> — araç hazır, bölüm 08</td></tr>
+    <tr><td>Dedektör modeli</td><td>Gerçek görüntüyle eğitiliyor</td></tr>
+    <tr><td><code>MENZIL_C</code> dedektör fiti</td><td>Dedektör çalışınca gerçek kutulardan yeniden</td></tr>
+    <tr><td><code>DOW_CEV_Y_ISARET</code></td><td>Yer testinde doğrulandı; kesin kanıt ilk otonom uçuş</td></tr>
+  </table></div>
+</section>
+
+<section id="bg">
+  <h2><span class="no">★</span><span>Görevin icrası — iki bilgisayar birlikte</span></h2>
+
+  <div class="blok not">
+    <span class="bas2">Ana hedef</span>
+    <p><strong>Avcı drone, Talon'u otonom güdüm koduyla vuracak.</strong>
+      Her şey buna hizmet ediyor: Talon bir rota uçar, konumunu 5-10 Hz
+      yayınlar; drone o konuma GPS ile yaklaşır, hedefi kamerada görünce
+      GPS'i bırakıp yalnız görüntüyle kovalar ve temas eder.</p>
+  </div>
+
+  <h3>İki bilgisayar, hangi işi yapar</h3>
+  <div class="tablo"><table>
+    <tr><th></th><th>TALON bilgisayarı</th><th>DRONE bilgisayarı</th></tr>
+    <tr><td><strong>Neyi uçurur</strong></td><td>Hedef uçak (sabit kanat)</td><td>Avcı drone (quadcopter)</td></tr>
+    <tr><td><strong>Bağ</strong></td><td>SiK telemetri → Pixhawk</td><td>ESP32 → ELRS → F405</td></tr>
+    <tr><td><strong>Arayüz</strong></td><td><code>:8000</code> · harita <code>:8010</code></td><td><code>:8810</code> · kalibrasyon <code>:8020</code></td></tr>
+    <tr><td><strong>Ağ görevi</strong></td><td>Hedef GPS'ini <strong>yayınlar</strong></td><td>Hedef GPS'ini <strong>dinler</strong> (UDP 47800)</td></tr>
+  </table></div>
+
+  <div class="blok dikkat">
+    <span class="bas2">İki bilgisayar AYNI AĞDA olmalı</span>
+    <p>Talon tarafındaki yayıncı, hedef konumunu drone bilgisayarının
+      IP'sine UDP ile basar. Aynı Wi-Fi/switch üzerinde olmaları şart.
+      Drone bilgisayarının IP'sini öğren:</p>
+    <pre><code>ip -4 addr | grep inet</code></pre>
+    <p>ve Talon tarafını o IP ile başlat:</p>
+    <pre><code>./baslat_talon.sh &lt;seri-port&gt; &lt;DRONE-BILGISAYARI-IP&gt;</code></pre>
+    <p>IP vermezsen yayın <strong>broadcast</strong>'e (255.255.255.255)
+      gider; çoğu ağda çalışır ama bazı yönlendiriciler broadcast'i keser —
+      IP vermek her zaman daha güvenlidir.</p>
+  </div>
+
+  <h3>Görev sırası — baştan sona</h3>
+  <ol class="adimlar">
+    <li><div><h4>Her iki bilgisayarı da ayağa kaldır</h4>
+      <p>TALON: <code>./baslat_talon.sh &lt;port&gt; &lt;drone-ip&gt;</code><br>
+         DRONE: <code>./reel/skydagger/baslat_backend.sh</code> sonra
+         <code>./baslat_drone.sh</code></p></div></li>
+    <li><div><h4>İki araçta da GPS fix'i bekle</h4>
+      <span class="tamam">✓ Talon 3D · uydu ≥ 10 &nbsp;&nbsp; ✓ drone uydu ≥ 10</span></div></li>
+    <li><div><h4>Drone'da KÖKEN KUR</h4>
+      <p>Araç yerde ve hareketsizken. Bu, bütün yerel metre hesabının
+        sıfır noktası.</p></div></li>
+    <li><div><h4>Hedef akışını doğrula</h4>
+      <p>Drone panelinde hedef yaşı <strong>1 saniyenin altında</strong>
+        olmalı. Değilse Talon tarafı yayınlamıyor ya da IP yanlış.</p>
+      <span class="tamam">✓ hedef: var · yaş &lt; 1.0 s</span></div></li>
+    <li><div><h4>Talon'un görevini yükle ve başlat</h4>
+      <p>Hazır şekil (KARE/DAİRE) ya da haritadan çizilmiş rota →
+        <strong>GÖREVİ YÜKLE</strong> → ARM → <strong>BAŞLAT</strong> → at.</p></div></li>
+    <li><div><h4>Talon rotaya otursun</h4>
+      <p>İrtifasına ve hızına ulaşmasını bekle. Drone'u erken kaldırma.</p></div></li>
+    <li><div><h4>Drone'u ELLE kaldır</h4>
+      <p>ARM (basılı tut) + MANUEL. Önce uçağı tanı, kontrolü doğrula.</p></div></li>
+    <li><div><h4>OTONOM'a geç</h4>
+      <p>Dört şart sağlanmalı: panel OTONOM · pilot izni · taze setpoint ·
+        kumanda bağı. Faz <strong>İSTASYON</strong> olacak — GPS ile
+        yaklaşıyor.</p></div></li>
+    <li><div><h4>Görsel kilidi izle</h4>
+      <p>Hedef kamerada görününce faz <strong>GÖRSEL</strong>'e döner ve
+        GPS bırakılır. Panelde kutu ve kilit ölçütü görünür.</p></div></li>
+    <li><div><h4>Temas</h4>
+      <p>Faz <strong>TERMİNAL</strong>. Ters giden ilk anda MANUEL'e al ya
+        da kumandada çubuk oynat.</p></div></li>
+    <li><div><h4>Kapanış</h4>
+      <p>Drone: MANUEL → indir → DISARM. Talon: RTL ya da AUTOLAND →
+        DISARM. İki terminalde de Ctrl+C.</p></div></li>
+  </ol>
+
+  <div class="blok dur">
+    <span class="bas2">Yarışma kuralı — üstün kısıt</span>
+    <p><strong>Görsel temas varken GPS güdümü YASAK.</strong> Yalnız bbox
+      kullanılır; temas kesilince GPS serbest. Bu, kodda yapısal olarak
+      garanti edilmiştir — görsel döngünün canlı GPS erişimi yoktur.</p>
+  </div>
+
+  <div class="blok dikkat">
+    <span class="bas2">İlk otonom denemede neye bakılır</span>
+    <p><strong>Araç hedeften KAÇIYORSA</strong> yanal işaret ters demektir:
+      <code>DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh</code></p>
+    <p><strong>Menzil tuhaf görünüyorsa</strong> kamera optiği kalibre
+      edilmemiştir — drone kılavuzu bölüm 08.</p>
+    <p><strong>Faz hep İSTASYON'da kalıyorsa</strong> dedektör hedefi
+      bulamıyor: model gerçek görüntüyle eğitilmiş mi, kamera doğru cihaz mı.</p>
+  </div>
+</section>
+
+<section id="b16">
+  <h2><span class="no">16</span><span>Güvenlik</span></h2>
+  <ol class="liste">
+    <li><strong>Yer testlerinde pervane çıkarılır.</strong></li>
+    <li><strong>Kumanda her zaman elde</strong> — çubuğu oynatmak otonomu keser.</li>
+    <li><strong>Meskûn mahalde otonom uçuş yapılmaz.</strong></li>
+    <li><strong>KÖKEN uçuş ortasında değiştirilmez.</strong></li>
+    <li><strong>Kamera kalibre edilmeden otonom görsel güdüm denenmez.</strong></li>
+    <li><strong>Test bitince araçlar havada kontrolsüz bırakılmaz.</strong></li>
+  </ol>
+
+  <div class="altbilgi">
+    Kaynak: <code>reel/gercek/</code>, <code>reel/drone_yki.py</code> ·
+    Bekçiler: <code>reel/tests/test_reel.py</code> (R1–R93) +
+    <code>tests/test_dow.py</code> (69) · Güdüm yasası <code>dow/</code>
+    altında DEĞİŞTİRİLMEDİ; <code>araclar/denklik.py</code> 400 tikte bit bit
+    doğruluyor.
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+  var baglar = [].slice.call(document.querySelectorAll("nav a"));
+  var bolumler = baglar.map(function(a){
+    return document.querySelector(a.getAttribute("href")); });
+  function etkinle(i){
+    baglar.forEach(function(a,j){ a.classList.toggle("etkin", i===j); });
+  }
+  if("IntersectionObserver" in window){
+    var gorunen = new Set();
+    var g = new IntersectionObserver(function(kayitlar){
+      kayitlar.forEach(function(k){
+        if(k.isIntersecting) gorunen.add(k.target); else gorunen.delete(k.target);
+      });
+      var enUst = -1;
+      bolumler.forEach(function(b,i){
+        if(gorunen.has(b) && (enUst<0 || b.offsetTop < bolumler[enUst].offsetTop))
+          enUst = i;
+      });
+      if(enUst>=0) etkinle(enUst);
+    }, {rootMargin:"-10% 0px -75% 0px"});
+    bolumler.forEach(function(b){ if(b) g.observe(b); });
+  }
+})();
+</script>
+
+</body>
+</html>

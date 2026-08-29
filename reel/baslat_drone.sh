@@ -52,6 +52,32 @@ export DOW_CEV_Y_ISARET="${DOW_CEV_Y_ISARET:-+1.0}"
 #   Elle seçmek gerekirse:  DOW_KAM_KAYNAK=/dev/video2 ./baslat_drone.sh
 export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-oto}"
 
+# ---- KAMERA OPTİĞİ ---------------------------------------------------------
+# ⛔⛔ ŞU AN SİMÜLASYON DEĞERLERİYLE UÇUYOR — HENÜZ ÖLÇÜLMEDİ.
+#
+#   dow/gorus/kamera.py'deki sabitler DoW simülasyonunda ölçüldü:
+#     F_PX = 540.4 px · TILT = 26.50° · MENZIL_C = 997 px·m · 1920x1080
+#   Gerçek FPV kamerası BAŞKA mercek, BAŞKA montaj açısı, BAŞKA çözünürlük.
+#
+#   NE OLUR: menzil ve kerteriz yanlış hesaplanır. R = MENZIL_C/kutu_px
+#   olduğu için F_PX'te %30 hata menzilde de %30 hatadır — güdüm hedefi
+#   olduğundan yakın ya da uzak sanır. Hata SESSİZDİR, hiçbir yerde patlamaz.
+#
+#   NASIL ÖLÇÜLÜR (5 dakika, dedektöre gerek yok):
+#       python3 gercek/kamera_ayari.py        # tarayıcı: localhost:8020
+#     Talon'u ölçülmüş bir mesafeye koy, kanat uçlarına tıkla, 3-4 mesafede
+#     tekrarla. Araç sana aşağıya yapıştırılacak export satırlarını verir.
+#
+#   ⚠ Ölçümü HANGİ çözünürlükte yaptıysan uçuşta da o kullanılmalı; F_PX
+#     çözünürlükle ölçeklenir. drone_yki.py uyuşmazlıkta yüksek sesle uyarır.
+#
+# Ölçtükten sonra bu satırların yorumunu kaldır:
+# export DOW_OPTIK_W=1920
+# export DOW_OPTIK_H=1080
+# export DOW_OPTIK_F_PX=540.4
+# export DOW_OPTIK_TILT=26.50
+# export DOW_OPTIK_MENZIL_C=997.0
+
 # ---- KUMANDA EKSEN HARİTASI (JUMPER-RC / RadioMaster Pocket, 7 eksen) ----
 # ⛔ ÖLÇÜLDÜ, VARSAYILMADI (araclar/kumanda_kalib.py, 2026-08-29) ve
 #   Betaflight Receiver sekmesinde gözle DOĞRULANDI.

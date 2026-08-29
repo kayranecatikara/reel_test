@@ -7,7 +7,8 @@
 #   1) talon/yayinci.py   Pixhawk'ın SERİ portunu O AÇAR ve dağıtır:
 #                           udp:127.0.0.1:14550  -> kontrol arayüzü
 #                           udp:<drone-ip>:47800 -> drone bilgisayarı (5 Hz hedef)
-#   2) talon/arayuz       yer kontrol arayüzü (http://localhost:8000)
+#   2) talon/gorev_plani  harita üstünde waypoint planlayıcı (http://localhost:8010)
+#   3) talon/arayuz       yer kontrol arayüzü (http://localhost:8000)
 #
 # ⛔ SIRA DEĞİŞMEZ: seri portu TEK süreç açabilir. Arayüz önce açarsa
 #   yayıncı porta erişemez ve drone hedef konumunu HİÇ alamaz.
@@ -20,6 +21,7 @@
 set -u
 cd "$(dirname "$0")"
 KOK="$(pwd)"
+mkdir -p "$KOK/logs"
 export PYTHONPATH="$KOK:$(dirname "$KOK"):${PYTHONPATH:-}"
 
 kirmizi(){ printf '\033[31m%s\033[0m\n' "$*"; }
@@ -29,11 +31,12 @@ yesil(){   printf '\033[32m%s\033[0m\n' "$*"; }
 # ---- önceki örnekleri temizle (desenler köşeli parantezle kırık, §9) ----
 temizle() {
     local v=0
-    for d in "[y]ayinci" "[g]cs.sunucu"; do
+    for d in "[y]ayinci" "[g]cs.sunucu" "[g]orev_plani"; do
         pgrep -f "$d" >/dev/null 2>&1 && { v=1; pkill -f "$d" 2>/dev/null || true; }
     done
     [ "$v" = "1" ] && { sari "  önceki Talon süreçleri kapatıldı"; sleep 1; }
-    for d in "[y]ayinci" "[g]cs.sunucu"; do pkill -9 -f "$d" 2>/dev/null || true; done
+    for d in "[y]ayinci" "[g]cs.sunucu" "[g]orev_plani"; do
+        pkill -9 -f "$d" 2>/dev/null || true; done
     return 0
 }
 [ "${1:-}" = "--kapat" ] && { temizle; yesil "  kapatıldı."; exit 0; }
@@ -75,7 +78,7 @@ else
     python3 talon/yayinci.py --port "$PORT" --baud "$BAUD" --hedef "$DRONE_IP" &
 fi
 YPID=$!
-trap 'kill $YPID 2>/dev/null; pkill -f "[g]cs.sunucu" 2>/dev/null' EXIT INT TERM
+trap 'kill $YPID ${GPID:-} 2>/dev/null; pkill -f "[g]cs.sunucu" 2>/dev/null' EXIT INT TERM
 sleep 3
 
 if ! kill -0 $YPID 2>/dev/null; then
@@ -83,14 +86,31 @@ if ! kill -0 $YPID 2>/dev/null; then
     exit 1
 fi
 
-# ---- 2) kontrol arayüzü (yayıncının UDP aynasına bağlanır) ----
+# ---- 2) görev planlayıcı (harita) ----
+# Ayrı süreç: arayüz Flask, bu stdlib HTTP. Aynı MAVLink aynasını dinler.
+# ⛔ Arayüzden ÖNCE açılır ki "GÖREV PLANLAMA" düğmesine basıldığında
+#   hazır olsun.
+# ⛔ 14554 — KENDİ aynası. 14550 arayüzün alt süreçlerinin; paylaşırsak
+#   çekirdek datagramları böler ve İKİSİ DE yarı kör kalır.
+python3 talon/gorev_plani.py --mav udp:127.0.0.1:14554 \
+        >"$KOK/logs/gorev_plani.log" 2>&1 &
+GPID=$!
+sleep 1
+if kill -0 $GPID 2>/dev/null; then
+    echo "  HARİTA : http://localhost:8010   (görev planlayıcı)"
+else
+    sari "  ⚠ görev planlayıcı açılmadı — logs/gorev_plani.log'a bak"
+fi
+
+# ---- 3) kontrol arayüzü (yayıncının UDP aynasına bağlanır) ----
 echo
 echo "  ARAYÜZ : http://localhost:8000   (udp:127.0.0.1:14550 üzerinden)"
 echo
-yesil "  ⭐ Talon kontrolü, rota çizme ve GÖREV YÜKLEME arayüzden yapılır."
-echo   "     Serbest waypoint planı için:  python3 talon/gorev_plani.py --yardim"
+yesil "  ⭐ HER ŞEY http://localhost:8000 ÜZERİNDEN."
+echo   "     Hazır şekiller (KARE/DAİRE/ELİPS) orada;"
+echo   "     harita üstünde serbest waypoint için GÖREV PLANLAMA düğmesi."
 echo
-echo "  Ctrl+C ile ikisi birden kapanır."
+echo "  Ctrl+C ile üçü birden kapanır."
 echo
 cd talon/arayuz
 # ⛔ İKİ AYRI DEĞİŞKEN — arayüzün kendi tasarımı (gcs/sunucu.py ~2244):

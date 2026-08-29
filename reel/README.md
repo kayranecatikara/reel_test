@@ -138,6 +138,19 @@ cd reel_test/reel
 > açar ve trafiği `udp:14550`'ye aynalar; arayüz oraya bağlanır. Sıra
 > ters olursa yayıncı porta erişemez.
 
+**Bu tek komut ÜÇ süreç başlatır** — ayrı terminal gerekmez:
+
+| ne | port | kim dinler |
+|---|---|---|
+| yayıncı → arayüz | udp 14552 | arayüzün kendisi |
+| yayıncı → alt süreçler | udp 14550 | preflight, senaryo |
+| yayıncı → planlayıcı | udp 14554 | `gorev_plani.py` |
+| yayıncı → drone | udp 47800 | drone bilgisayarı (5 Hz hedef) |
+
+⛔ **Her tüketiciye ayrı port.** Aynı porta iki soket bağlanırsa çekirdek
+her datagramı yalnız birine verir; ikisi de paketlerin yarısını görür ve
+hiçbiri hata vermez.
+
 ### ADIM 2 — Talon bilgisayarı: kontrol arayüzünü aç
 
 **İkinci bir terminalde:**
@@ -152,6 +165,83 @@ Tarayıcı: **http://localhost:8000**
 Buradan: **KARE / DAİRE / ELİPS** seçip **YÜKLE → BAŞLAT** ile Talon'a rota
 çizdirilir. Talon o rotayı uçarken konumu otomatik olarak drone
 bilgisayarına akmaya devam eder.
+
+### ADIM 2b — GÖREV PLANI (harita üstünde waypoint)
+
+KARE/DAİRE/ELİPS hazır şekillerdir. Kendi rotanı **harita üstünde** çizmek
+için arayüzdeki **GÖREV PLANLAMA — HARİTA** düğmesine bas. Planlayıcı
+`baslat_talon.sh` ile birlikte zaten açılmıştır (ayrı terminal gerekmez);
+düğme onu yeni sekmede açar → **http://localhost:8010**
+
+⚠ İkisi de **aynı araca** yazar. Hem şekil hem harita görevi yüklersen
+**son yüklenen geçerlidir.**
+
+**Harita çevrimdışıdır.** Sahada internet olmayabilir, o yüzden karolar
+(harita parçaları) BİR KEZ önceden indirilir ve diske yazılır
+(`~/.skydagger/karolar`). İnternet varken, uçuş alanında ya da evde:
+
+```bash
+# Aracın kendi GPS konumundan otomatik (telemetri bağlıyken):
+python3 gorev_plani.py --indir --yaricap 2000 --z 14-17
+
+# Ya da alanın koordinatını elle vererek (araç kapalıyken de olur):
+python3 gorev_plani.py --indir 41.00820,28.97840 --yaricap 2000 --z 14-17
+```
+
+| yarıçap | zoom | karo | boyut | süre |
+|---|---|---|---|---|
+| 1 km | 14-17 | ~324 | ~6 MB | ~1 dk |
+| 2 km | 14-17 | ~740 | ~15 MB | ~1 dk |
+| 2 km | 14-18 | ~2261 | ~45 MB | ~5 dk |
+
+Aynı işi panelin sağındaki **ALANI İNDİR** düğmesi de yapar (ilerleme
+çubuğuyla). ⚠ OSM gönüllü sunucularından iner; iki indirmeyi aynı anda
+başlatmak engellenmiştir.
+
+**Zoom ne demek:** z=17'de bir piksel 0.9 m, bir karo 230 m'dir; z=14'te
+bir piksel 7.2 m, bir karo 1843 m. Düşük zoom uzaktan bakmak, yüksek zoom
+yakınlaşmak içindir. Aralık indirdiğin için ikisi de çalışır.
+
+**Kullanım:**
+- **tıkla** → waypoint ekle (sağdaki "varsayılan irtifa" ile)
+- **sürükle** → haritayı kaydır
+- **sağ tık** → son noktayı sil
+- **tekerlek / +−** → yakınlaş-uzaklaş
+- **⌖** → EV noktasına dön
+- **GÖREVİ YÜKLE** → EV + KALKIŞ + waypoint'ler + RTL olarak araca yaz
+- **GÖREVİ BAŞLAT (AUTO)** → uçağı AUTO'ya alır, görev başlar
+- **DURDUR (LOITER)** → uçak bulunduğu yerde tur atarak bekler
+
+⛔ **BAŞLAT'ı arayüzden (localhost:8000) DEĞİL buradan yap.** Arayüz
+araçtaki görevi geri okumaz, yalnız *kendi* yüklediğini hatırlar; buradan
+yüklenen görev onun için görünmezdir ve `BAŞLAT` düğmesi kapalı kalır.
+Ayrıca arayüzün mod satırında AUTO düğmesi yoktur.
+
+**BAŞLAT ne yapar** (arayüzün sırası birebir kopyalandı):
+1. `mission_set_current(1)` — başlangıç öğesini sabitler. `MIS_RESTART=0`
+   olduğu için AUTO görevi *kaldığı yerden* sürdürür; ayrıca son öğede
+   (RTL) takılı kalmak aracın "PreArm: In landing sequence" deyip ARM'ı
+   reddetmesine yol açar.
+2. Yerdeyken zaten AUTO'daysan **araya FBWA sokar** — yoksa "AUTO'ya geç"
+   hiçbir şey yapmaz, ArduPlane'in elden-atış tetikleyicisi hiç çalışmaz
+   ve uçak arm'lı halde yerde bekleyip `DISARM_DELAY` dolunca disarm olur.
+   *(Havadayken yapılmaz: uçuş ortasında moddan çıkmak rotayı bozar.)*
+3. AUTO'ya geçer ve HEARTBEAT ile **doğrular** (`set_mode`'un ACK'i yoktur,
+   SiK telsizinde paket düşer).
+
+Uçak havadaysa kalkış adımı atlanır, görev ilk waypoint'ten başlar.
+
+Harita üstündeki işaretler: **yeşil** = EV noktası, **sarı ok** = Talon'un
+anlık konumu ve pusula yönü, **mavi** = waypoint'ler ve rota.
+
+**✅ Tamam ölçütü:** üstteki `EV ✔` yeşil, `KARO` rozetinde sıfırdan büyük
+bir sayı, harita çiziliyor. Harita siyah ve "karoları indirilmemiş" yazıyorsa
+o bölge indirilmemiştir.
+
+⛔ **`EV YOK (GPS)` iken görev yüklenmez.** Görev EV noktasına GÖRE kurulur;
+fix olmadan waypoint'in yere nereye düşeceği belirsizdir. Kapalı ortamda
+haritayı yine de görmek istersen adresin sonuna
+`?merkez=41.00820,28.97840,16` ekle — bu yalnız görüntüdür, görev yüklemez.
 
 ### ADIM 3 — Drone bilgisayarı: SKYDAGGER BACKEND'İ HAZIRLA
 
@@ -380,9 +470,16 @@ reel/
 │   ├── sunucu.py            yarışma sunucusu istemcisi
 │   ├── kamera_yakala.py     yakalama kartı
 │   └── panel.py             operatör arayüzü (video + joystick)
-├── talon/yayinci.py         MAVLink hub + 5 Hz hedef yayını
+├── talon/
+│   ├── yayinci.py           MAVLink hub (3 ayna) + 5 Hz hedef yayını
+│   ├── gorev_plani.py       ⭐ harita üstünde waypoint çiz + araca yükle
+│   ├── karo.py              çevrimdışı OSM karo önbelleği
+│   ├── kalkis_ayari.py      elden atış kalkış parametreleri
+│   ├── atis_testi.py        atış algılama ölçümü (pervanesiz)
+│   ├── baglanti_testi.py    beş katmanlı bağlantı teşhisi
+│   └── arayuz/              talon_arayuz (olduğu gibi alındı)
 ├── araclar/dikey_sim.py     dikey döngü tezgâhı (donanımsız)
-├── tests/test_reel.py       R1..R55 bekçileri
+├── tests/test_reel.py       R1..R89 bekçileri
 └── docs/DONANIM_KONTROL.md  uçuştan önce doldurulacak kontrol listesi
 ```
 

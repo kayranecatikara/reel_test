@@ -1,286 +1,291 @@
-# Avcı İHA — Drones of War Entegrasyonu
+# reel_test — Avcı Drone ile Talon'u Otonom Vurma
 
-TEKNOFEST avcı drone sistemi: **GPS yaklaşma + görsel (IBVS) terminal güdüm**,
-UE5 tabanlı *Drones of War Teknofest* simülatöründe.
+**Ana hedef:** bir **avcı drone**, sabit kanatlı bir **hedef uçağı (Talon)**
+otonom güdüm koduyla bulup vuracak. GPS ile yaklaşır, hedefi kamerada
+görünce GPS'i bırakıp yalnız görüntüyle kovalar ve temas eder.
 
-Sistem hedefi ortalama **17 saniyede imha ediyor** (ölçüldü: 7/7, medyan 17.3 s,
-en yakın 0.63 m — `docs/kampanya/MODEL20_V3_V5.md`).
+Güdüm yasaları bir simülatörde (Drones of War) geliştirilip ölçüldü;
+bu depo onları **gerçek donanıma** taşır. Yasa değişmedi — değişen, aracın
+ve kameranın modeli.
+
+```
+https://github.com/kayranecatikara/reel_test
+```
+
+> **Bu belgeyi hiç bilmeyen biri baştan sona okuyup sistemi çalıştırabilir.**
+> Her terim ilk geçtiği yerde tanımlanır; her komut olduğu gibi yazılıdır.
+> Kurulumu bir yapay zekâya yaptırmak istersen: en alttaki **Kurulum promptu**.
 
 ---
 
-## Nasıl çalışıyor
+## Belgeler — nereden başlanır
 
+| belge | ne anlatır |
+|---|---|
+| **`reel/docs/DRONE_YKI.html`** | 🚁 Avcı drone yer kontrolü — 0'dan aç, kullan, görevi icra et |
+| **`reel/docs/TALON_YKI.html`** | 🛩️ Talon yer kontrolü — 0'dan aç, kullan, görevi icra et |
+| `reel/README.md` | Ayrıntılı işletim kılavuzu (iki bilgisayar birlikte) |
+| `reel/docs/DRONE_KILAVUZU.md` · `TALON_KILAVUZU.md` | Aynı içerik, Markdown |
+| `docs/SIMULASYON_KURULUM.md` | Simülatör tarafı (güdüm burada ölçüldü) |
+| `CLAUDE.md` | Bu depoda geliştirme kuralları — yapay zekâ da buna uyar |
+
+**İki HTML dosyasını tarayıcıda aç** — çevrimdışı çalışırlar:
+```bash
+xdg-open reel/docs/DRONE_YKI.html
+xdg-open reel/docs/TALON_YKI.html
 ```
-KALKIŞ  →  ISTASYON  →  GÖRSEL
-```
-
-| faz | kaynak | ne yapar |
-|---|---|---|
-| **KALKIŞ** | — | dikey tırman, yatay komut yok |
-| **ISTASYON** | GPS | hedefin kuyruğundaki istasyon noktasına otur (hata ~4.5 m) |
-| **GÖRSEL** | **yalnız kamera** | ≤15 m'de devral, bbox ile terminal yaklaşma |
-
-⛔ **Yarışma kısıtı:** görsel temas varken **GPS güdümü yasak**. Yapısal olarak
-uygulanır — `ibvs.komut()` imzasında hedef konumu YOKTUR ve `tests/test_dow.py`
-bunu bekçiyle sınar (B1, B18, B40).
-
-**Dedektör:** `talon_v3.pt` (YOLO11s, imgsz uyarlanabilir 960/1920, fp16).
-Depoda **tek model** vardır ve çalışma anında değişmez — `talon_v5` ölçümle
-elenip 2026-08-27'de sistemden tamamen çıkarıldı (sebebi aşağıda).
-
-**Panel:** `http://127.0.0.1:8801` — yer kontrol istasyonu, canlı FPV +
-overlay + telemetri + yarışma kilit ölçütü.
 
 ---
 
-## Ölçülmüş bulgular
+## Sistem tek bakışta
 
-Bu depodaki her sayı taze uçuştan gelir; yöntem `CLAUDE.md`'de yazılı
-(tek değişken, dönüşümlü A/B, mekanizma kapısı, geçerlilik eşi, n≥4).
+```
+ ┌─ BİLGİSAYAR 1 — TALON ────────────┐   ┌─ BİLGİSAYAR 2 — DRONE ───────────┐
+ │                                    │   │                                   │
+ │  Pixhawk ─SiK telsiz─> yayinci.py  │   │  ESP32 ─ELRS─> drone_yki.py       │
+ │                          │         │   │  kumanda ─USB─>    │              │
+ │              ┌───────────┴──────┐  │   │  kamera ─USB─>     │              │
+ │              │                  │  │   │                    ▼              │
+ │       udp:14550/14552/14554  udp:47800 ──────────>  hedef GPS (5-10 Hz)    │
+ │              │                     │   │                    │              │
+ │      arayüz :8000                  │   │             panel :8810           │
+ │      harita :8010                  │   │       kamera ayarı :8020          │
+ └────────────────────────────────────┘   └───────────────────────────────────┘
+                        ikisi AYNI AĞDA (ethernet / WiFi)
+```
 
-### ⭐ Model seçimi — yeni model her zaman iyi değil
-*(v5 bu ölçümden sonra elendi; 2026-08-27'de koddan tamamen çıkarıldı.)*
+| bilgisayar | ne uçurur | ne çalıştırır | arayüz |
+|---|---|---|---|
+| **TALON** | Hedef uçak (sabit kanat, ArduPlane) | `reel/baslat_talon.sh` | `:8000` · harita `:8010` |
+| **DRONE** | Avcı drone (7" quad, Betaflight) | `reel/baslat_drone.sh` | `:8810` · kalibrasyon `:8020` |
 
-| | **talon_v3** | talon_v5 (elendi) |
-|---|---|---|
-| imha | **7/7** | 2/6 |
-| süre medyanı | **17.3 s** | 129.4 s |
-| en yakın | **0.63 m** | 1.01 m |
-
-v5 **uzak menzil** için eğitildi (hard negatif + uzak uçak fotoğrafı) ve orada
-daha iyi. Ama bu sistemin vuruşu **4-15 m**'de oluyor:
-
-| menzil | v3 | v5 |
-|---|---|---|
-| 4-8 m | **%67.6** | %53.9 |
-| 8-15 m | **%87.7** | %74.0 |
-
-v5 terminalde temas kaybediyor → görselden istasyona 2 kat sık düşüyor →
-devirden vuruşa 20 s yerine 51 s. **Yeni model eğitecekler 4-15 m bandını
-hedeflemeli.**
-
-### Diğer kampanyalar
-
-| konu | sonuç | belge |
-|---|---|---|
-| görüş zinciri hızı | tavan semptom, blokaj sebep | `docs/kampanya/HZ4_GORUS_HIZI.md` |
-| ayrı görüş iş parçacığı | kontrol 40→47 Hz ama kazanç yok → KAPALI | `docs/kampanya/ISP_GORUS_IS_PARCACIGI.md` |
-| HybridSort takipçi | v5'le ölçüldü → **geçersiz**, v3'le tekrar gerekiyor | `docs/kampanya/TAKIP_HYBRIDSORT.md` |
+⛔ **İki bilgisayar aynı ağda olmalı.** Talon tarafı hedef konumunu drone
+bilgisayarının IP'sine UDP ile basar.
 
 ---
 
-## Gereksinimler
+## Hızlı başlangıç
 
-| | sürüm | neden kritik |
-|---|---|---|
-| Ubuntu | 22.04+ (glibc 2.35) | GE-Proton bu tabana derli |
-| Python | **3.10** | torch 2.5.1+cu121 tekerleri 3.10 için |
-| NVIDIA sürücü | **≥ 550** (ölçüldüğü: 580.173.02) | CUDA 12.1 çalışma zamanı |
-| GPU | CUDA'lı, ≥6 GB (ölçüldüğü: RTX 4060 8 GB) | YOLO + oyun aynı GPU'da |
-| disk | ~8 GB | oyun 1.6 GB + Proton 533 MB + tekerler |
+### Her iki bilgisayarda, bir kez
+```bash
+git clone https://github.com/kayranecatikara/reel_test.git
+cd reel_test
+pip install -r reel/requirements.txt
 
-**Bu sistemin ölçüldüğü ortam** (referans):
-
+sudo usermod -aG dialout $USER          # ÇIKIP TEKRAR GİR
+sudo systemctl disable --now ModemManager
 ```
-Ubuntu 22.04 · glibc 2.35 · çekirdek 6.8.0 · Python 3.10.12
-torch 2.5.1+cu121 · ultralytics 8.4.103 · numpy 1.26.3 · opencv 4.9.0
-boxmot 18.0.0 · mss 10.2.0 · gdown 5.2.1
-NVIDIA 580.173.02 · CUDA 12.1 · RTX 4060 Laptop 8 GB
-GE-Proton11-5-x86_64 · umu-launcher 1.4.4
-```
+`ModemManager` her yeni seri porta AT komutu gönderip "modem mi?" diye yoklar
+ve MAVLink akışını bozar.
 
-⚠ **numpy 2.x KURMAYIN.** `opencv-python 4.9` ve `torch 2.5.1` numpy<2'ye
-bağlı; numpy 2 kurulursa `cv2` import'u çöker. `boxmot` 19+ numpy≥2 dayatır,
-bu yüzden **boxmot 18.0.0** sabitlenmiştir.
+### TALON bilgisayarı
+```bash
+cd reel
+pip install -r talon/arayuz/requirements.txt
+
+# Uçuş alanının haritasını BİR KEZ indir (internet varken)
+python3 talon/gorev_plani.py --indir <ENLEM>,<BOYLAM> --yaricap 2000 --z 14-17
+
+# Uçuş günü — tek komut, üç süreç
+./baslat_talon.sh <seri-port> <DRONE-BILGISAYARI-IP>
+```
+→ **http://localhost:8000**
+
+### DRONE bilgisayarı
+```bash
+cd reel
+./skydagger/kur.sh                      # bir kez, ~2 dk
+
+# Terminal 1
+./skydagger/baslat_backend.sh
+# Terminal 2
+./baslat_drone.sh
+```
+→ **http://localhost:8810**
+
+### Donanım yokken denemek
+```bash
+cd reel
+python3 drone_yki.py --sahte            # sahte ELRS, panel açılır
+./baslat_talon.sh --sahte 127.0.0.1     # daire çizen sahte Talon
+```
 
 ---
 
-## Kurulum
+## Durum — dürüstçe
 
-En kolayı: bu dosyanın **en sonundaki MASTER PROMPT**'u Claude Code CLI'ye
-yapıştırın; her şeyi kendisi kurar.
+| konu | durum |
+|---|---|
+| Güdüm yasası sim'den taşındı | ✅ **bit bit aynı** (`araclar/denklik.py`, 400 tik) |
+| Talon: bağlantı, GPS, görev yükleme, AUTO, motor tetikleme | ✅ yer testi yapıldı |
+| Talon → drone hedef GPS akışı | ✅ ölçüldü: 10 Hz, 0 red, yaş 0.1 s |
+| Drone: ELRS bağı, kumanda, panel, kamera | ✅ yer testi yapıldı |
+| Elden atış ölü zamanı | ✅ 1.20 s → **0.20 s** (uçak iki kez bu yüzden düşmüştü) |
+| **Kamera optiği kalibrasyonu** | ⛔ **YAPILMADI** — araç hazır (`gercek/kamera_ayari.py`) |
+| **Dedektör modeli** | ⛔ gerçek görüntüyle eğitiliyor |
+| **Talon havada uçuş** | ⛔ yapılmadı |
+| **Drone otonom uçuş** | ⛔ yapılmadı |
 
-Elle kurmak isterseniz:
+---
+
+## Emniyet — pazarlığa açık değil
+
+1. **Yer testlerinde pervane ÇIKARILIR.**
+2. **Kumanda her zaman açık ve elde** — çubuğu oynatmak otonomu keser.
+3. **Meskûn mahalde otonom uçuş yapılmaz.**
+4. **Havadayken acil DISARM'a basılmaz** — motor durur, araç düşer.
+5. **Kalkış ölü zamanı > 1 s ise uçak elden ATILMAZ.**
+6. **Kamera kalibre edilmeden otonom görsel güdüm denenmez.**
+7. **Test bitince araçlar havada kontrolsüz bırakılmaz.**
+
+---
+
+## Depo yapısı
+
+```
+reel/                       ⭐ GERÇEK DONANIM
+├── baslat_drone.sh         DRONE bilgisayarı — tek komut
+├── baslat_talon.sh         TALON bilgisayarı — tek komut (3 süreç)
+├── drone_yki.py            drone yer kontrolü — tek giriş noktası
+├── gercek/                 drone tarafı
+│   ├── arayuz.py             ARAÇ SÖZLEŞMESİ (eksen/işaret/birim kuralları)
+│   ├── komut.py              ⭐ HAKEM — pilot/güdüm/panel arasında
+│   ├── dikey.py              ⭐ Angle modunda dikey kapalı döngü
+│   ├── kamera_ayari.py       ⭐ kamera optiğini SAHADA ölç
+│   ├── crsf.py · elrs.py · skydagger.py    ELRS zinciri
+│   ├── baglanti.py · konum.py · hedef.py   telemetri, çerçeve, hedef
+│   ├── kamera_yakala.py · panel.py         video ve operatör arayüzü
+│   └── sunucu.py             yarışma sunucusu istemcisi
+├── talon/                  Talon tarafı
+│   ├── yayinci.py            MAVLink hub (3 ayna) + 5 Hz hedef yayını
+│   ├── gorev_plani.py        ⭐ harita üstünde waypoint + AUTO başlat
+│   ├── karo.py               çevrimdışı OSM karo önbelleği
+│   ├── kalkis_ayari.py       elden atış kalkış parametreleri
+│   ├── atis_testi.py         atış algılama ölçümü (pervanesiz)
+│   ├── baglanti_testi.py     beş katmanlı bağlantı teşhisi
+│   └── arayuz/               talon_arayuz (olduğu gibi alındı, KAYNAK.md)
+├── skydagger/              komitenin ESP32 backend'i (çıkarıcı + başlatıcı)
+├── docs/                   ⭐ DRONE_YKI.html · TALON_YKI.html + Markdown
+└── tests/test_reel.py      R1..R98 bekçileri
+
+dow/                        güdüm yasaları — SİMÜLASYONDAN, DEĞİŞTİRİLMEZ
+araclar/                    ölçüm/analiz araçları (denklik.py dahil)
+tests/                      sim bekçileri (69)
+docs/                       simülasyon belgeleri ve sicil
+CLAUDE.md                   geliştirme kuralları
+```
+
+### ⛔ `dow/` altındaki güdüm yasaları DEĞİŞTİRİLMEDİ
+
+Gerçek donanıma taşıma, **dikişlerle** yapıldı: hepsi varsayılan olarak
+kapalı, hepsi `DOW_*` env değişkeniyle açılır.
+
+| dikiş | ne için |
+|---|---|
+| `Beyin(baglanti=…, cevirici=…)` | gerçek araç bağlantısı ve çeviriciyi takmak |
+| `DOW_CEV_*` | araç modeli sabitleri (Angle mode, açı sınırı, yanal işaret) |
+| `DOW_OPTIK_*` | kamera optiği (F_PX, TILT, MENZIL_C, çözünürlük) |
+| `Ayar.GPS_KAYNAK="gercek"` | sim'in "truth" ve filtresi gerçekte yok |
+
+Hiçbiri verilmezse güdüm çıktısı simülasyondakiyle **birebir aynıdır**:
+```bash
+python3 araclar/denklik.py yaz  logs/a.json
+python3 araclar/denklik.py kiyas logs/a.json logs/b.json   # ✅ BİT BİT AYNI
+```
+
+---
+
+## Testler
 
 ```bash
-git clone https://github.com/kayranecatikara/drones_of_war_entegrasyon.git
-cd drones_of_war_entegrasyon
-
-python3.10 -m venv .venv && source .venv/bin/activate
-pip install --index-url https://download.pytorch.org/whl/cu121 \
-    torch==2.5.1 torchvision==0.20.1
-pip install ultralytics==8.4.103 "numpy==1.26.3" opencv-python==4.9.0.80 \
-    boxmot==18.0.0 mss==10.2.0 pillow gdown==5.2.1
-sudo apt install -y xdotool wmctrl x11-utils
-
-# Oyun (1.5 GB) — Drive'dan
-mkdir -p indirilen oyun
-gdown 1l7JsnKOAMoXb2fwzfPA0egQ8o7DNs0q9 -O "indirilen/dow.zip"
-unzip -q "indirilen/dow.zip" -d oyun/
-
-# GE-Proton11-5
-mkdir -p ~/.local/share/Steam/compatibilitytools.d calistirma
-curl -L -o calistirma/GE-Proton11-5.tar.gz \
-  https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-x86_64.tar.gz
-sha512sum -c calistirma/beklenen.sha512     # doğrula
-tar -xf calistirma/GE-Proton11-5.tar.gz -C ~/.local/share/Steam/compatibilitytools.d/
-
-# umu-launcher (ZIPAPP — tek dosya indirmesi YOK, tar açılır)
-mkdir -p calistirma
-curl -L -o calistirma/umu.tar \
-  https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/umu-launcher-1.4.4-zipapp.tar
-tar -xf calistirma/umu.tar -C calistirma/      # -> calistirma/umu/umu-run
-chmod +x calistirma/umu/umu-run
+python3 -m pytest reel/tests/test_reel.py tests/ -q      # 168 bekçi
 ```
 
-### Çalıştırma
+Bekçiler süs değil — **her biri yaşanmış bir hataya** karşılık gelir.
+Örnekler:
 
-```bash
-# 1) oyunu aç + göreve gir (~2 dk)
-DISPLAY=:1 python3 araclar/sim.py
+| bekçi | neyi koruyor |
+|---|---|
+| R39 | Kumanda kopukken otonomun süresiz devam etmesi |
+| R63 | Hareket algılamanın nesne kimliğine bakıp değeri kaçırması |
+| R74 | Taze gelen paketin içindeki bayat veriyi taze sanmak |
+| R88 | İki programın aynı UDP portunda birbirinin paketini çalması |
+| R90 | Kamera optiği varsayılanının sessizce kayması |
+| R98 | `--sahte` yolunun backend arayıp çıkış 2 vermesi |
+| B5 | **Görsel temas varken GPS güdümü kullanılması (yarışma kuralı)** |
 
-# 2) panel
-xdg-open http://127.0.0.1:8801
+---
+---
 
-# 3) uçuş
-echo -n hibrit > .gudum_kipi
-DISPLAY=:1 DOW_GORSEL=1 DOW_KIP=hibrit python3 araclar/kosu.py DENEME 4 150
+# 🤖 KURULUM PROMPTU
 
-# 4) sonuç
-python3 araclar/gorsel_ozet.py logs/DENEME
-python3 araclar/video.py logs/DENEME/k01 logs/deneme.mp4 5
+> Aşağıdaki metni **olduğu gibi** bir yapay zekâ ajanına (Claude Code vb.)
+> ver. Temiz bir Ubuntu makinede depoyu kurar, doğrular ve neyin eksik
+> olduğunu söyler. **Uçuş yaptırmaz** — kurulum ve doğrulama yapar.
+
+```text
+Bu depoyu temiz bir Ubuntu makinesine kur ve çalıştığını DOĞRULA:
+
+    https://github.com/kayranecatikara/reel_test
+
+Bu, TEKNOFEST için bir avcı drone sistemidir. Ana hedef: bir quadcopter'ın,
+sabit kanatlı bir hedef uçağı (Talon) otonom güdüm koduyla bulup vurması.
+İki ayrı bilgisayarda çalışır: biri Talon'u uçurur ve konumunu yayınlar,
+diğeri drone'u sürer.
+
+⛔ ÖNCE ŞUNLARI OKU VE UY:
+  1. Depodaki CLAUDE.md geliştirme kurallarıdır — sen de onlara uyacaksın.
+  2. reel/docs/DRONE_YKI.html ve reel/docs/TALON_YKI.html işletim
+     kılavuzlarıdır; kurulumdan sonra kullanıcıya bunları göster.
+  3. dow/ altındaki güdüm yasalarını DEĞİŞTİRME. Simülasyonda ölçülmüş
+     davranış oradadır ve gerçek donanıma "dikiş"lerle bağlanır
+     (DOW_CEV_*, DOW_OPTIK_*). Bir şeyi değiştirmen gerekirse önce sor.
+
+YAP:
+
+A) KURULUM
+   1. Depoyu klonla.
+   2. Python paketlerini kur:
+        pip install -r reel/requirements.txt
+        pip install -r reel/talon/arayuz/requirements.txt
+   3. Seri port izni ve ModemManager:
+        sudo usermod -aG dialout $USER        # oturum yenilenmeli
+        sudo systemctl disable --now ModemManager
+      (ModemManager her yeni seri porta AT komutu gönderip MAVLink akışını
+       bozar — bu adım atlanırsa telemetri hiç gelmez.)
+   4. v4l-utils kur (kamera teşhisi için):  sudo apt install -y v4l-utils
+
+B) DOĞRULAMA — hepsi donanımsız çalışır
+   1. Bekçiler geçmeli:
+        python3 -m pytest reel/tests/test_reel.py tests/ -q
+      168 test geçmeli. Geçmeyen varsa DUR ve raporla.
+   2. Güdüm bit bit aynı olmalı:
+        python3 araclar/denklik.py yaz logs/a.json
+        python3 araclar/denklik.py yaz logs/b.json
+        python3 araclar/denklik.py kiyas logs/a.json logs/b.json
+      "BİT BİT AYNI" demeli.
+   3. Donanımsız açılış:
+        cd reel && python3 drone_yki.py --sahte --port 8811
+      Panel http://localhost:8811 açılmalı. Sonra kapat.
+   4. Talon planlayıcısı:
+        cd reel/talon && python3 gorev_plani.py --port 8011
+      http://localhost:8011 açılmalı (harita boş olabilir). Sonra kapat.
+   5. Kamera cihazlarını listele:
+        cd reel && python3 gercek/kamera_ayari.py --tara
+
+C) RAPOR — kullanıcıya şunları SAYIYLA söyle
+   - Kaç test geçti, denklik sonucu ne çıktı.
+   - Hangi video cihazları bulundu, yakalama kartı var mı.
+   - Seri portlar (ls -l /dev/serial/by-id/) ve kumanda (ls /dev/input/js*).
+   - Eksik olanlar: kamera optiği kalibre edilmiş mi
+     (baslat_drone.sh içinde DOW_OPTIK_* satırları yorumda mı),
+     uçuş alanı haritası indirilmiş mi (~/.skydagger/karolar).
+
+D) YAPMA
+   - Uçuş yaptırma, araca komut gönderme, ARM etme.
+   - dow/ altındaki güdüm kodunu değiştirme.
+   - Kendi kafana göre commit/push yapma — önce sor.
+
+Bittiğinde kullanıcıya sırayla ne yapması gerektiğini yaz:
+kamera kalibrasyonu, harita indirme, ve iki bilgisayarın başlatma komutları.
 ```
-
-Testler: `python3 -m pytest tests/test_dow.py -q` → **60 bekçi**.
-
----
-
-## Kill-switch'ler
-
-Her davranış değişikliğinin env anahtarı vardır; varsayılanı **ölçüm** belirler.
-
-| anahtar | varsayılan | ne yapar |
-|---|---|---|
-| `DOW_MODEL` | `talon_v3` | dedektör modeli |
-| `DOW_TAKIP` | `0` | HybridSort takipçi (v3'le ölçülmedi) |
-| `DOW_GORUS_ISP` | `0` | çıkarımı ayrı iş parçacığına al |
-| `DOW_KIP` | `hibrit` | `hibrit` / `gps` / `gorsel` |
-| `DOW_GORSEL_DET_HZ` | `10` | çıkarım tavanı |
-
----
----
-
-# 🤖 MASTER PROMPT
-
-Aşağıdaki metnin tamamını kopyalayıp **Claude Code CLI**'ye yapıştırın.
-Sistemi sıfırdan kurar ve uçuşa hazır hale getirir.
-
-````
-Bu sistemi Ubuntu makineme sıfırdan kur. Sürüm uyumluluğu KRİTİK — aşağıdaki
-sürümlerin dışına çıkma, çıkman gerekirse önce bana sor.
-
-## 1. Depoyu çek
-git clone https://github.com/kayranecatikara/drones_of_war_entegrasyon.git
-cd drones_of_war_entegrasyon
-Depo `talon_v3.pt` modelini İÇERİR, ayrıca indirme yok. Model TEK yerden
-seçilir: `dow/gorus/dedektor.py` içindeki `MODEL_YOLU`. Çalışma anında model
-değiştiren kapı 2026-08-27'de SİLİNDİ — iki ayrı varsayılan tanımlıydı ve
-elenen modeli sessizce geri yüklüyordu.
-
-## 2. Ön koşulları doğrula (kurmadan ÖNCE)
-- Ubuntu 22.04+ (glibc >= 2.35):  ldd --version
-- NVIDIA sürücü >= 550:           nvidia-smi --query-gpu=driver_version --format=csv
-- CUDA'lı GPU, >= 6 GB VRAM
-- Python 3.10 var mı:             python3.10 --version
-- Boş disk >= 8 GB
-Bunlardan biri sağlanmıyorsa DUR ve bana söyle. Sürücü eskiyse kendin
-yükseltmeye çalışma.
-
-## 3. Python ortamı — SÜRÜMLER SABİT
-python3.10 -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip
-pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.5.1 torchvision==0.20.1
-pip install ultralytics==8.4.103 "numpy==1.26.3" opencv-python==4.9.0.80 boxmot==18.0.0 mss==10.2.0 pillow gdown==5.2.1
-
-⚠ numpy 2.x ASLA KURMA. opencv 4.9 ve torch 2.5.1 numpy<2'ye bağlı; numpy 2
-gelirse `import cv2` çöker. boxmot 19+ numpy>=2 dayatır — bu yüzden 18.0.0
-sabit. Kurulum sonrası `pip install` çıktısında numpy'nin yükseltilmediğini
-DOĞRULA, yükseltildiyse `pip install numpy==1.26.3` ile geri al.
-
-Doğrula: python3 -c "import torch,cv2,numpy,ultralytics,boxmot;
-print(torch.__version__, torch.cuda.is_available(), numpy.__version__, cv2.__version__)"
-Beklenen: 2.5.1+cu121 True 1.26.3 4.9.0
-
-## 4. Sistem araçları
-sudo apt update && sudo apt install -y xdotool wmctrl x11-utils unzip curl
-
-## 5. Oyunu OTOMATİK indir (kullanıcıdan indirme İSTEME)
-Drones of War Teknofest, Google Drive'da. Dosya kimliği:
-  1l7JsnKOAMoXb2fwzfPA0egQ8o7DNs0q9   (Drones of War Teknofest.zip, ~1.5 GB)
-Ayrıca aynı klasörde (opsiyonel, SDK zaten depoda vendorlanmış):
-  1ndpiKGNLoREuOkJE4EvkbzXnyWD_kxqR   (drone_sdk.py)
-  1EajS4ILi2QqJdYUuDVmSo1W4M6l9Yb-g   (README.md)
-
-mkdir -p indirilen oyun
-gdown 1l7JsnKOAMoXb2fwzfPA0egQ8o7DNs0q9 -O indirilen/dow.zip
-unzip -q indirilen/dow.zip -d oyun/
-
-İndirme yarıda kalırsa gdown'u tekrar çalıştır (kaldığı yerden devam eder).
-Drive kota hatası verirse bana söyle, tarayıcıdan indireceğim.
-Sonuç şu yolda olmalı:
-  oyun/Drones of War Teknofest/DronesOfWar.exe
-
-## 6. GE-Proton11-5 (oyun UE5 + D3D12; düz Wine ÇALIŞMAZ)
-mkdir -p ~/.local/share/Steam/compatibilitytools.d calistirma
-curl -L -o calistirma/GE-Proton11-5.tar.gz \
-  https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-x86_64.tar.gz
-Doğrula (sha512):
-8fb1f3ae65a8dc22efd8099ff489075f0eebddf01c445b423244589f6f0a1e19c01de5d1e722b97fc1ebaf6390c813052ed55290058f8d21f1353a36146f4a2c
-tar -xf calistirma/GE-Proton11-5.tar.gz -C ~/.local/share/Steam/compatibilitytools.d/
-⚠ Başka GE-Proton sürümü kurma; betikler `GE-Proton11-5-x86_64` klasör adını
-arıyor.
-
-## 7. umu-launcher — ZIPAPP (dikkat: tek dosya indirme linki YOKTUR)
-mkdir -p calistirma
-curl -L -o calistirma/umu.tar \
-  https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/umu-launcher-1.4.4-zipapp.tar
-tar -xf calistirma/umu.tar -C calistirma/
-chmod +x calistirma/umu/umu-run
-Sonuç: calistirma/umu/umu-run ve calistirma/umu/umu_run.py olmalı.
-⚠ `.../releases/latest/download/umu-run` diye bir varlık YOK (404 verir);
-  yayınlanan asset ZIPAPP TAR'ıdır. Sürümü 1.4.4'te sabitledim; "latest"
-  kullanma, ileride asset adları değişebilir.
-
-## 8. Doğrula
-python3 -m pytest tests/test_dow.py -q      # 60 bekçi GEÇMELİ
-python3 -c "import sys;sys.path.insert(0,'.');
-from dow.gorus.dedektor import MODEL_YOLU; print(MODEL_YOLU)"   # talon_v3.pt
-
-## 9. İlk uçuş
-DISPLAY=:1 python3 araclar/sim.py           # oyunu açar, göreve girer (~2 dk)
-Ayrı terminalde panel: http://127.0.0.1:8801
-echo -n hibrit > .gudum_kipi
-DISPLAY=:1 DOW_GORSEL=1 DOW_KIP=hibrit python3 araclar/kosu.py DENEME 2 150
-
-Beklenen: hedef ~15-35 saniyede imha, en yakın 0.4-0.9 m.
-Olmuyorsa `logs/DENEME/ozet.csv`'deki `imha`, `devir_s`, `en_yakin_m`
-sütunlarını bana göster.
-
-## TUZAKLAR (hepsi yaşandı, tekrarlama)
-- Oyun penceresi HDMI-0'da (0,0), KENARLIKSIZ TAM EKRAN olmalı; ekran
-  yakalama oradan okuyor. Üstüne pencere açma, odağını çalma.
-- `pkill -f` desenini köşeli parantezle kır (`kosu[.]py`), yoksa kendi
-  kabuğunu öldürür.
-- Sim kuran betiği boruya bağlama (`| tail`); arka plandaki süreçler
-  yüzünden EOF gelmez ve asılır.
-- Hedefi VURUNCA oyun "MISSION COMPLETED" ekranına düşer ve SDK 12345
-  portunu KAPATIR. Sistem bunu tanıyıp PLAY AGAIN'e basıyor; portun
-  açılması 60 saniyeyi bulabilir.
-- Kritik veriyi `logs/` altına yaz, `/tmp` gecelik temizlenir.
-
-## ÇALIŞMA KURALLARI
-`CLAUDE.md`'yi OKU ve uy. Özetle: güdüm davranışını değiştiren kod
-kullanıcı onayı olmadan yazılmaz; her özellik kill-switch'li girer;
-karar TAZE UÇUŞ + video + log ile verilir, eski log replay'i kanıt
-değildir; kol başına en az 4 uçuş; ölçütler koşmadan ÖNCE ilan edilir.
-````

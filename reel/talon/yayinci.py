@@ -16,13 +16,21 @@ denklemine girecek biçimde yaymak.
    O UDP'ye bağlanır ve HER ŞEY (görev yükleme, RC override, mod
    değiştirme) çalışmaya devam eder.
 
-        [Pixhawk] --SiK--> [seri] --> YAYINCI --+--> udp:14550  (talon_arayuz)
+        [Pixhawk] --SiK--> [seri] --> YAYINCI --+--> udp:14552  arayüzün KENDİSİ
                                                 |
-                                                +--> udp:47800  (drone bilgisayarı)
+                                                +--> udp:14550  arayüzün ALT
+                                                |               SÜREÇLERİ
+                                                |
+                                                +--> udp:14554  GÖREV PLANLAYICI
+                                                |
+                                                +--> udp:47800  drone bilgisayarı
                                                      5 Hz hedef paketi
 
-   Arayüzü şöyle başlatın:
-        MAV_ENDPOINT=udp:127.0.0.1:14550 ./baslat.sh
+   ⛔ HER TÜKETİCİYE AYRI PORT. Aynı porta iki soket bağlanırsa çekirdek
+     her datagramı yalnız BİRİNE verir; ikisi de paketlerin yarısını görür
+     ve hiçbiri hata vermez. (18 Ağu 2026'da yaşandı.)
+
+   Hepsini birlikte ayağa kaldıran: ../baslat_talon.sh
 
 ⭐ YAYIN BİÇİMİ = YARIŞMA SUNUCUSUNUN BİÇİMİ (haberleşme dokümanı §7.2).
    Böylece drone tarafındaki kod bugün ile yarışma günü arasında HİÇ
@@ -76,6 +84,13 @@ def _arg():
                    help="ARAYÜZÜN bağlanacağı UDP (boş = ayna yok)")
     a.add_argument("--ayna2", default="udpout:127.0.0.1:14550",
                    help="arayüzün ALT SÜREÇLERİNİN bağlanacağı UDP")
+    # ⛔ ÜÇÜNCÜ AYNA ŞART — 14550'yi PAYLAŞTIRMA.
+    #   Görev planlayıcı (gorev_plani.py) da MAVLink dinliyor. 14550'ye
+    #   bağlansaydı arayüzün alt süreçleriyle AYNI portta olurdu: çekirdek
+    #   her datagramı yalnız BİRİNE verir ve ikisi de yarı kör kalır.
+    #   Bu tam olarak 18 Ağu 2026'da arayüzün kendi başına düştüğü tuzak.
+    a.add_argument("--ayna3", default="udpout:127.0.0.1:14554",
+                   help="GÖREV PLANLAYICININ bağlanacağı UDP")
     # ⭐ TAVAN, HEDEF DEĞİL. Yayın artık OLAY GÜDÜMLÜ: araçtan yeni konum
     #   geldiği an basılır. Bu sayı yalnız üst sınırdır — ağı gereksiz
     #   doldurmamak için. ÖLÇÜLDÜ: araçtan konum 6.7 Hz geliyor; tavan
@@ -219,7 +234,8 @@ def main():
             return 2
         aynalar = []
         for etiket, adres in (("arayüz (GCS_ENDPOINT)", a.ayna),
-                              ("alt süreç (MAV_ENDPOINT)", a.ayna2)):
+                              ("alt süreç (MAV_ENDPOINT)", a.ayna2),
+                              ("görev planlayıcı", a.ayna3)):
             if not adres:
                 continue
             try:

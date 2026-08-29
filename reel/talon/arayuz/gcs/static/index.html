@@ -212,6 +212,20 @@ label.alan input,label.alan select{width:100%;margin-top:3px;padding:9px 8px;
   <button id="manuelAc">M A N U E L &nbsp; K O N T R O L</button>
 </section>
 
+<!-- YEREL EKLEME (talon_arayuz'da yoktur) — bkz. arayuz/KAYNAK.md.
+     Harita üstünde serbest waypoint çizmek için ayrı bir planlayıcı var
+     (reel/talon/gorev_plani.py, port 8010). baslat_talon.sh onu da
+     başlatır; bu düğme yalnız açar. -->
+<section>
+  <button id="haritaAc">G Ö R E V &nbsp; P L A N L A M A &nbsp; — &nbsp;
+    H A R İ T A</button>
+  <div id="haritaNot" style="margin-top:7px;font-size:10.5px;
+       color:var(--soluk);line-height:1.5">Harita üstünde serbest waypoint çiz,
+    araca yükle ve AUTO'yu oradan başlat. Yukarıdaki KARE/DAİRE/ELİPS
+    hazır şekillerdir; ikisi de aynı araca yazar — <b>sonuncusu
+    geçerlidir.</b></div>
+</section>
+
 <section>
   <h2>Şekil çiz — GPS görevi</h2>
   <div class="grid3" id="sekilSec">
@@ -974,6 +988,13 @@ async function planlaSimdi(){
 
 ["#fOlcu","#fOlcu2","#fIrtifa","#fTur","#fYon","#fMerkez","#fInisYon"]
   .forEach(s => $(s).addEventListener("input", planla));
+
+$("#haritaAc").addEventListener("click", () => {
+  // Ayrı origin (8010) olduğu için buradan yoklayamayız — CORS.
+  // Planlayıcı baslat_talon.sh ile birlikte açılıyor; sekme boş gelirse
+  // orada çalışmıyor demektir.
+  window.open("http://" + location.hostname + ":8010", "gorevPlani");
+});
 
 function gorevDurumCiz(){
   const g = T.gorev || {};

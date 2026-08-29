@@ -51,13 +51,47 @@ MENZİL SABİTİ (ayrı ölçüm, n=59 gerçek tespit)
 ================================================================================
 """
 import math
+import os
 
-IMG_W, IMG_H = 1920, 1080
+# ============================================================================
+#  ⭐ GERÇEK DONANIM DİKİŞİ (2026-08-29)
+#
+#  Aşağıdaki sabitler SİMÜLASYONDA ölçüldü. Gerçek uçakta kamera BAŞKA:
+#  başka mercek, başka montaj açısı, başka yakalama çözünürlüğü. Bu
+#  sabitleri gerçek değerlerle DEĞİŞTİRMEDEN görsel güdüm menzili ve
+#  kerterizi YANLIŞ hesaplar — ve hata sessizdir, hiçbir yerde patlamaz.
+#
+#  ⛔ NEDEN ENV, NEDEN KOD DEĞİL: güdüm YASASI değişmiyor; değişen KAMERA
+#    MODELİ. Simülasyonda ölçülmüş davranışın bit bit korunması için
+#    varsayılanlar aynen bırakıldı — hiçbir DOW_OPTIK_* verilmezse çıktı
+#    bu dosyanın önceki hâliyle BİREBİR aynıdır.
+#
+#  ⚠ ÇÖZÜNÜRLÜK TUZAĞI: F_PX ve CX/CY, kalibrasyonun YAPILDIĞI çözünürlüğe
+#    bağlıdır. Yakalama kartı 1280x720 verirken 1920x1080 sabitleri
+#    kullanılırsa aynı hedef 40 px yerine 27 px görünür ve menzil 25 m
+#    yerine 37 m denir — %50 hata, sessiz. Bu yüzden DOW_OPTIK_W/H de
+#    ayarlanabilir ve `drone_yki.py` gerçek kare boyutuyla karşılaştırıp
+#    uyumsuzlukta YÜKSEK SESLE uyarır.
+#
+#  Ölçüm aracı: reel/gercek/kamera_ayari.py
+# ============================================================================
+def _env_f(ad, varsayilan):
+    v = os.environ.get(ad)
+    if v is None or v == "":
+        return varsayilan
+    try:
+        return float(v)
+    except ValueError:
+        raise ValueError("%s='%s' sayı değil" % (ad, v))
+
+
+IMG_W = int(_env_f("DOW_OPTIK_W", 1920))
+IMG_H = int(_env_f("DOW_OPTIK_H", 1080))
 CX, CY = IMG_W/2.0, IMG_H/2.0
 
-TILT_DEG = 26.50        # ölçüldü; kamera ekseninin burna göre YUKARI açısı
-F_PX     = 540.4        # ölçüldü; fx = fy (kare piksel)
-MENZIL_C = 997.0        # px·m; R = MENZIL_C / kutu_genisligi
+TILT_DEG = _env_f("DOW_OPTIK_TILT", 26.50)   # kamera ekseninin burna göre YUKARI açısı
+F_PX     = _env_f("DOW_OPTIK_F_PX", 540.4)   # fx = fy (kare piksel)
+MENZIL_C = _env_f("DOW_OPTIK_MENZIL_C", 997.0)   # px·m; R = MENZIL_C / kutu_genisligi
 # ⭐ KÖŞEGEN ÖLÇÜSÜ İÇİN AYRI SABİT (2026-08-28) — bkz. IbvsCfg.MENZIL_OLCU.
 #   TÜRETME (§0.2): sabit, DÜZ UÇUŞTA algılanan menzili DEĞİŞTİRMEYECEK
 #   şekilde seçildi; böylece iki ölçü arasındaki TEK fark YATIŞA
@@ -67,8 +101,8 @@ MENZIL_C = 997.0        # px·m; R = MENZIL_C / kutu_genisligi
 #   Sonuç — algılanan/gerçek menzil oranı:
 #     yatış  düz    max(w,h) 1.048x   köşegen 1.048x   (BİREBİR aynı)
 #     yatış >32°    max(w,h) 1.180x   köşegen 1.070x   (şişme %18 -> %7)
-MENZIL_C_KOSEGEN = 1053.6
-KANAT_M  = 1.718        # Talon kanat açıklığı (belge)
+MENZIL_C_KOSEGEN = _env_f("DOW_OPTIK_MENZIL_C_KOSEGEN", 1053.6)
+KANAT_M  = _env_f("DOW_OPTIK_KANAT", 1.718)   # Talon kanat açıklığı (belge)
 
 HFOV_DEG = 2*math.degrees(math.atan(CX/F_PX))
 VFOV_DEG = 2*math.degrees(math.atan(CY/F_PX))

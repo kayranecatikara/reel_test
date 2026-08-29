@@ -97,7 +97,16 @@ def main():
     print("=" * 70)
 
     # ---------------- 1) ELRS bağı ----------------
-    if a.bag == "skydagger":
+    # ⛔ SIRA ÖNEMLİ: --sahte EN ÖNDE. `--bag` varsayılanı "skydagger"
+    #   olduğu için, skydagger dalı önce gelirse `--sahte` HİÇ ULAŞILMAZ
+    #   olur: donanımsız deneme backend arar, bulamaz ve çıkış 2 verir.
+    #   (29 Ağu 2026'da yakalandı — README'deki "donanımsız deneme" yolu
+    #   fiilen kırıktı.)
+    if a.sahte:
+        bag = ElrsBag(sahte_port=_SahtePort())
+        bag.ac()
+        print("  ELRS      : SAHTE (donanımsız deneme)")
+    elif a.bag == "skydagger":
         # ⭐ KOMİTENİN RESMÎ YOLU (Skydagger rehberi v2.0):
         #    bizim yazılım --RC_US--> backend --USB--> ESP32 --tel--> ELRS TX
         #    ⛔ Backend'i BİZ başlatmayız; operatör konsoldan /connect ve
@@ -117,10 +126,6 @@ def main():
         print("              ⛔ İlk %.0f s YALNIZ SAFE basılacak (rehber §8) —"
               % SkydaggerCfg.GUVENLI_SURE_S)
         print("                 bu sırada modülün MAVİ ışığını doğrula.")
-    elif a.sahte:
-        bag = ElrsBag(sahte_port=_SahtePort())
-        bag.ac()
-        print("  ELRS      : SAHTE (donanımsız deneme)")
     else:
         if not a.elrs:
             print("⛔ --elrs verilmedi. Portu bulmak için:")
@@ -210,6 +215,31 @@ def main():
             time.sleep(0.5)
             w, h = kam.cozunurluk()
             print("  KAMERA    : %s  %dx%d" % (a.kamera, w, h))
+            # ⛔⛔ SESSİZ %50 HATA KAPISI.
+            #   F_PX ve CX/CY, kalibrasyonun YAPILDIĞI çözünürlüğe bağlıdır.
+            #   Kart 1280x720 verirken 1920x1080 sabitleri kullanılırsa aynı
+            #   hedef 40 px yerine 27 px görünür ve menzil 25 m yerine 37 m
+            #   denir. Hiçbir yerde patlamaz; güdüm sadece yanlış nişan alır.
+            from dow.gorus import kamera as _KAM
+            if w and h and (int(w) != _KAM.IMG_W or int(h) != _KAM.IMG_H):
+                olcek = float(w) / _KAM.IMG_W if _KAM.IMG_W else 0.0
+                print("")
+                print("  " + "=" * 66)
+                print("  ⛔ ÇÖZÜNÜRLÜK UYUŞMAZLIĞI — GÖRSEL GÜDÜM YANLIŞ ÖLÇER")
+                print("  " + "=" * 66)
+                print("     kamera veriyor   : %dx%d" % (w, h))
+                print("     optik kalibrasyon: %dx%d  (F_PX=%.1f)"
+                      % (_KAM.IMG_W, _KAM.IMG_H, _KAM.F_PX))
+                print("     menzil hatası    : ~%.0f%% (ölçek %.3f)"
+                      % (abs(1.0 / olcek - 1.0) * 100 if olcek else 0.0, olcek))
+                print("")
+                print("     ÇÖZÜM — biri:")
+                print("       a) kartı kalibrasyon çözünürlüğüne zorla:")
+                print("          export DOW_KAM_W=%d DOW_KAM_H=%d"
+                      % (_KAM.IMG_W, _KAM.IMG_H))
+                print("       b) bu çözünürlükte YENİDEN kalibre et:")
+                print("          python3 gercek/kamera_ayari.py")
+                print("  " + "=" * 66 + "\n")
         else:
             print("  KAMERA    : ⛔ %s" % kam.hata)
             kam = None

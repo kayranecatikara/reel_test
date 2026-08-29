@@ -2296,3 +2296,642 @@ def test_R74_hedef_yasi_VERININ_KENDI_YASINI_da_sayiyor():
     assert d["yas_ulasma"] < 0.5, "paket az önce ulaştı"
     assert d["yas_veri"] >= 3.0, "verinin kendi yaşı ayrı raporlanmalı"
     assert d["var"] is False
+
+
+# ============================================================================
+#  R75-R82 · ÇEVRİMDIŞI HARİTA (OSM karoları) — reel/talon/karo.py
+#
+#  Sahada internet YOKTUR. Harita bir kez indirilir, diskte durur. Bu
+#  bekçiler üç şeyi koruyor:
+#    1. Karo indeksi matematiği (yanlışsa harita KAYAR — waypoint yanlış
+#       yere düşer ve kimse fark etmez, çünkü harita "bir şey" gösterir).
+#    2. Panelin JS projeksiyonu ile konum.py'nin BİREBİR aynı olması —
+#       waypoint lat/lon tutulup metreye JS'te çevriliyor, sunucu metreden
+#       tekrar lat/lon'a çeviriyor. İki formül ayrışırsa görev kayar.
+#    3. Karo ucunun ASLA ağa gitmemesi — sahada bu, panelin donması demek.
+# ============================================================================
+sys.path.insert(0, os.path.join(REEL, "talon"))
+import karo as KARO                                             # noqa: E402
+
+
+def test_R75_karo_indeksi_gidis_donus():
+    """Karo numarası ↔ karo köşesi tutarlı olmalı.
+
+    `karo_no` bir enlem/boylamı hangi karonun içine düştüğünü söyler;
+    `karo_kose` o karonun SOL-ÜST köşesinin enlem/boylamını verir. Bir
+    noktayı karoya çevirip karonun köşesini geri alırsak, o köşe AYNI
+    karonun içinde kalmalıdır. Kalmazsa yuvarlama hatası var demektir ve
+    harita bir karo (z=17'de 230 m) kayar.
+    """
+    for z in (14, 15, 16, 17, 18):
+        for enlem, boylam in ((41.0082, 28.9784), (39.925, 32.866),
+                              (0.0, 0.0), (-33.87, 151.21), (60.17, 24.94)):
+            x, y = KARO.karo_no(enlem, boylam, z)
+            assert 0 <= x < 2 ** z and 0 <= y < 2 ** z
+            ke, kb = KARO.karo_kose(x, y, z)
+            # köşe, kendi karosunun içinde (ya da tam sınırında) olmalı
+            x2, y2 = KARO.karo_no(ke - 1e-9, kb + 1e-9, z)
+            assert (x2, y2) == (x, y), (
+                "z=%d %s -> karo %d/%d, kösesi %d/%d karosunu gösterdi"
+                % (z, (enlem, boylam), x, y, x2, y2))
+
+
+def test_R76_panel_JS_projeksiyonu_konum_py_ile_AYNI():
+    """⛔ Panelin JS'i ile konum.py AYRIŞIRSA görev sessizce kayar.
+
+    Panel waypoint'i lat/lon olarak tutar, yüklerken JS `metreye()` ile
+    EV'e göre metreye çevirir. Sunucudaki `gorev_kur()` o metreyi
+    `YerelCerceve` ile tekrar lat/lon'a çevirir. İki formül aynı değilse
+    tıkladığın yer ile uçağın gittiği yer farklı olur — ve harita üstünde
+    HER ŞEY DOĞRU GÖRÜNÜR, çünkü çizim de JS formülünü kullanır.
+
+    Burada JS'in sayısal sabitlerini sayfadan SÖKÜP konum.py ile
+    karşılaştırıyoruz.
+    """
+    import re
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    m = re.search(r"const A=([0-9.]+), F=1/([0-9.]+), E2=F[*][(]2-F[)],",
+                  kaynak)
+    assert m, ("panel JS'inde A / F / E2 sabitleri beklenen biçimde yok. "
+               "E2 ELLE YAZILMAMALI — konum.py gibi F'ten türetilmeli, "
+               "yoksa iki taraf sessizce ayrışır.")
+    assert float(m.group(1)) == K.A_YARIEKSEN, (
+        "JS büyük yarı eksen %s, konum.py %s" % (m.group(1), K.A_YARIEKSEN))
+    js_f = 1.0 / float(m.group(2))
+    assert js_f == K.F_BASIKLIK, (
+        "JS basıklık %.17g, konum.py %.17g" % (js_f, K.F_BASIKLIK))
+    assert js_f * (2.0 - js_f) == K.E2, "türetilen E2 konum.py ile aynı değil"
+
+    # ve formülün kendisi: JS'i Python'da bire bir tekrar edip kıyasla
+    def js_metreye(la, lo, la0, lo0):
+        s = math.sin(math.radians(la0))
+        t = 1.0 - K.E2 * s * s
+        M = K.A_YARIEKSEN * (1.0 - K.E2) / t ** 1.5
+        N = K.A_YARIEKSEN / math.sqrt(t)
+        return (math.radians(la - la0) * M,
+                math.radians(lo - lo0) * N * math.cos(math.radians(la0)))
+
+    cer = K.YerelCerceve()
+    cer.kokeni_kur(41.0082, 28.9784, 100.0)
+    for la, lo in ((41.0100, 28.9800), (40.9900, 28.9500), (41.0500, 29.0500)):
+        k, d, _ = cer.metreye(la, lo, irtifa_amsl=100.0)
+        jk, jd = js_metreye(la, lo, 41.0082, 28.9784)
+        assert abs(k - jk) < 1e-6 and abs(d - jd) < 1e-6, (
+            "JS ile konum.py ayrıştı: %.6f/%.6f vs %.6f/%.6f"
+            % (k, d, jk, jd))
+
+
+def test_R77_karo_ucu_ASLA_aga_gitmez():
+    """⛔ Panelin karo ucu ağa çıkarsa SAHADA DONAR.
+
+    Sahada internet yok; bir HTTP isteği DNS zaman aşımına kadar (5-30 s)
+    asılı kalır. Panel her karede onlarca karo ister — hepsi asılırsa panel
+    ölür. İndirme AYRI ve İSTEĞE BAĞLI bir adımdır (`--indir` / butonu).
+    """
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index('if self.path.startswith("/karo/")')
+    son = kaynak.index('if self.path == "/api/karo_durum"')
+    govde = kaynak[bas:son]
+    assert "KARO.oku(" in govde, "karo ucu diskten okumuyor"
+    for yasak in ("KARO.indir", "urllib", "alan_indir"):
+        assert yasak not in govde, (
+            "karo ucunda AĞ ÇAĞRISI var (%s) — sahada paneli dondurur"
+            % yasak)
+
+
+def test_R78_alan_karolari_istenen_yaricapi_KAPSIYOR():
+    """İndirilen alan, istenen yarıçapı gerçekten örtmeli.
+
+    Yarıçap yetmezse uçuş alanının kenarı boş kalır — ve bunu ancak sahada,
+    haritanın yarısı siyahken fark edersin.
+    """
+    e0, b0, R = 41.0082, 28.9784, 1500.0
+    for z in (14, 16, 17):
+        liste = set(KARO.alan_karolari(e0, b0, R, z, z))
+        assert liste, "z=%d icin hic karo uretilmedi" % z
+        # dört ana yön + dört köşe, R kadar uzakta: hepsi listede olmalı
+        cer = K.YerelCerceve()
+        cer.kokeni_kur(e0, b0, 0.0)
+        d = R / math.sqrt(2.0)
+        for k, dg in ((R, 0), (-R, 0), (0, R), (0, -R),
+                      (d, d), (d, -d), (-d, d), (-d, -d)):
+            la, lo, _ = cer.dereceye(k, dg, 0.0)
+            gerek = KARO.karo_no(la, lo, z)
+            assert (z,) + gerek in {(z, x, y) for (zz, x, y) in
+                                    [(z, a, b) for (z_, a, b) in liste
+                                     if z_ == z]} or \
+                   any(zz == z and (x, y) == gerek for (zz, x, y) in liste), (
+                "z=%d: %s yönündeki kenar karosu %s listede yok"
+                % (z, (k, dg), gerek))
+
+
+def test_R79_onbellek_durumu_ONBELLEKLI_ama_taze_zorlanabilir():
+    """Durum taraması 700 ms'de bir çağrılıyor; dizini her seferinde
+    dolaşmak 2000 karoda HTTP isteğini bekletir (donma sebebi).
+    Ama `taze=True` gerçek taramayı zorlayabilmeli — yoksa indirme
+    bittiğinde sayı hiç güncellenmez."""
+    a = KARO.onbellek_durumu(taze=True)
+    b = KARO.onbellek_durumu()
+    assert b is a, "ikinci çağrı önbellekten dönmeliydi"
+    c = KARO.onbellek_durumu(taze=True)
+    assert c is not a, "taze=True yeni tarama yapmalıydı"
+    for alan in ("dizin", "karo", "mb"):
+        assert alan in c
+
+
+def test_R80_karo_yolu_onbellek_dizininden_CIKAMAZ():
+    """`/karo/z/x/y.png` ucu dışarıdan gelen sayıları dosya yoluna koyuyor.
+    Sayı olmayan her şey reddedilmeli; sayılar da önbellek dizininin
+    dışına çıkamamalı."""
+    kok = os.path.realpath(KARO.KOK)
+    for z, x, y in ((17, 76086, 49138), (0, 0, 0), (-1, -5, -9),
+                    (99, 10 ** 9, 10 ** 9)):
+        yol = os.path.realpath(KARO.yol(z, x, y))
+        assert yol.startswith(kok + os.sep), (
+            "karo yolu önbellek dizininin dışına çıktı: %s" % yol)
+    # ucun kendisi sayı olmayanı 400 ile reddediyor mu (int() ValueError)
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index('if self.path.startswith("/karo/")')
+    govde = kaynak[bas:bas + 900]
+    assert "int(v)" in govde and "except Exception" in govde, (
+        "karo ucu sayı olmayan yolu reddetmiyor")
+
+
+def test_R81_gorev_yukleme_sozlesmesi_DEGISMEDI():
+    """⛔ Harita eklenirken yükleme yolu DEĞİŞMEMELİ.
+
+    R72/R73 `gorev_kur(noktalar=[{kuzey,dogu,irtifa}])` sözleşmesini
+    koruyor. Panel artık lat/lon tutuyor; metreye çevirmeyi UNUTURSA
+    sunucuya derece gider ve waypoint EV'in 1 metre yanına düşer
+    (0.001 derece ≈ 100 m yerine 0.001 m). Bu sessiz ve felakettir.
+    """
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index('b_yukle").onclick')
+    govde = kaynak[bas:bas + 800]
+    assert "metreye(" in govde, (
+        "yükleme, lat/lon'u metreye ÇEVİRMİYOR — waypoint'ler EV'in "
+        "dibine düşer")
+    assert "kuzey:" in govde and "dogu:" in govde, (
+        "yükleme gövdesi kuzey/dogu alanlarını göndermiyor")
+    assert "noktalar:metre" in govde.replace(" ", ""), (
+        "POST edilen liste çevrilmiş liste değil")
+
+
+def test_R82_metre_piksel_bilinen_degerlerle_uyusuyor():
+    """Ölçek çubuğu yanlışsa mesafeleri yanlış tahmin ederiz.
+    z=16, 41° enlemde bir piksel 1.80 m'dir (bilinen OSM değeri)."""
+    assert abs(KARO.metre_piksel(41.0, 16) - 1.8025) < 0.001
+    assert abs(KARO.metre_piksel(0.0, 0) - 156543.03) < 0.1
+    # her zoom seviyesi bir öncekinin yarısı
+    for z in range(1, 19):
+        assert abs(KARO.metre_piksel(41.0, z) * 2
+                   - KARO.metre_piksel(41.0, z - 1)) < 1e-6
+
+
+def test_R83_indirilen_alan_hatirlanir_ama_BOS_INDIRME_hatirlanmaz():
+    """Panel, GPS fix yokken haritayı en son İNDİRİLEN alana oturtur.
+
+    ⛔ Ama indirme TAMAMEN başarısızsa (sahada internet yok, hepsi hata)
+    not tutulmamalı: yoksa panel karosu olmayan bir yere oturur ve
+    kullanıcı "harita bozuk" sanır. Elde en az bir karo varsa alan
+    kullanılabilir demektir.
+    """
+    import json as _js
+    import tempfile
+    eski_kok, eski_dosya = KARO.KOK, KARO.ALAN_DOSYA
+    try:
+        d = tempfile.mkdtemp()
+        KARO.KOK = d
+        KARO.ALAN_DOSYA = os.path.join(d, "alan.json")
+        assert KARO.alan_oku() is None, "boş dizinde alan olmamalı"
+
+        KARO.alan_yaz(41.002892, 28.656232, 2000, 14, 17)
+        a = KARO.alan_oku()
+        assert abs(a["enlem"] - 41.002892) < 1e-9
+        assert abs(a["boylam"] - 28.656232) < 1e-9
+        assert a["yaricap"] == 2000 and a["z_alt"] == 14 and a["z_ust"] == 17
+
+        # bozuk dosya çökertmemeli
+        open(KARO.ALAN_DOSYA, "w").write("{bozuk")
+        assert KARO.alan_oku() is None
+
+        # tamamen başarısız indirme not TUTMAMALI
+        open(KARO.ALAN_DOSYA, "w").write(_js.dumps({"enlem": 1, "boylam": 2}))
+        onceki = KARO.alan_oku()
+        kaynak = open(os.path.join(REEL, "talon", "karo.py"),
+                      encoding="utf-8").read()
+        assert "if ind or varr:" in kaynak, (
+            "alan_indir, HİÇ karo inmese bile alanı not ediyor — panel "
+            "karosuz bir yere oturur")
+        assert onceki is not None
+    finally:
+        KARO.KOK, KARO.ALAN_DOSYA = eski_kok, eski_dosya
+
+
+def test_R84_EV_gelince_harita_EVe_kayar():
+    """İndirilen alan yalnız BAŞLANGIÇ tahminidir; EV noktası gerçektir.
+
+    ⛔ Alan merkezine oturunca `merkezKuruldu` işaretlenirse, GPS fix
+    geldiğinde harita EV'e KAYMAZ — operatör uçağı haritanın dışında
+    arar. Bu bekçi, o bayrağın alan dalında set EDİLMEDİĞİNİ sınar.
+    """
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index("if(ev&&!merkezKuruldu)")
+    govde = kaynak[bas:bas + 400]
+    ev_dali, _, kalan = govde.partition("else if(!merkezKuruldu&&kr_alan(d))")
+    assert kalan, "alan yedeği kaldırılmış"
+    alan_dali = kalan.split("else if")[0]
+    assert "merkezKuruldu=true" in ev_dali, "EV dalı merkezi kilitlemeli"
+    assert "merkezKuruldu=true" not in alan_dali, (
+        "alan dalı merkezKuruldu'yu kilitliyor — EV gelince harita "
+        "uçağa KAYMAZ")
+
+
+# ============================================================================
+#  R85-R87 · GÖREVİ BAŞLAT — planlayıcının kendi AUTO yolu
+#
+#  NEDEN BURADA: Talon arayüzü (localhost:8000) araçtaki görevi GERİ OKUMAZ;
+#  yalnız KENDİ yüklediğini hatırlar (gcs/sunucu.py:2033 `durum.gorev`).
+#  Planlayıcıdan yüklenen görev onun için görünmezdir ve BAŞLAT düğmesi
+#  kapalı kalır — 29 Ağu 2026'da sahada, araç ARM'lıyken yaşandı.
+#  Bu yüzden başlatmayı planlayıcı kendi yapar; arayüzün zor kazanılmış
+#  sırası birebir kopyalandı ve aşağıdaki bekçiler onu koruyor.
+# ============================================================================
+def test_R85_baslat_DORT_KAPIDAN_gecmeden_calismaz():
+    """⛔ BAŞLAT uçağı otonom uçuşa sokar. Ön koşulsuz çalışamaz."""
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index('if self.path == "/api/baslat"')
+    govde = kaynak[bas:kaynak.index('if self.path == "/api/dur"')]
+    for kosul, aciklama in (
+            ('if m is None', "MAVLink bağlı değil"),
+            ('if not gorev', "görev yüklenmemiş"),
+            ('if not MOD_NO', "mod tablosu okunamamış"),
+            ('if not armli', "araç ARM değil")):
+        assert kosul in govde, "BAŞLAT kapısı eksik: %s" % aciklama
+    # panelde de aynı kapılar gösterilmeli (kullanıcı NEDEN kapalı görsün)
+    pb = kaynak.index('const bb=document.getElementById("b_baslat")')
+    panel = kaynak[pb:pb + 500]
+    assert "d.gorev" in panel and "d.armli" in panel and "d.bagli" in panel, (
+        "panel, BAŞLAT'ın neden kapalı olduğunu göstermiyor")
+    assert "confirm(" in kaynak[kaynak.index('b_baslat").onclick'):
+                                kaynak.index('b_baslat").onclick') + 400], (
+        "BAŞLAT onay sormuyor — yanlışlıkla basılabilir")
+
+
+def test_R86_AUTO_yenilemesi_YALNIZ_YERDE_yapilir():
+    """⛔ İKİ AYRI TUZAK, ikisi de ölçülmüş:
+
+    (a) YERDE zaten AUTO'daysak "AUTO'ya geç" HİÇBİR ŞEY YAPMAZ; ArduPlane'in
+        elden-atış tetikleyicisi (auto_takeoff_check) hiç çalışmaz. Uçak
+        arm'lı yerde bekler, DISARM_DELAY dolunca kendiliğinden disarm olur.
+        Arayüzde 22 Ağu 2026 SITL'de ölçüldü: 600 s boyunca irtifa 0.
+        Çare: araya FBWA sok.
+
+    (b) Ama bu HAVADAYKEN YAPILMAZ — uçuş ortasında AUTO'dan çıkıp girmek
+        rotayı bozar. Mod değiştirmek havada pilotun kararıdır.
+    """
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    bas = kaynak.index('if self.path == "/api/baslat"')
+    govde = kaynak[bas:kaynak.index('if self.path == "/api/dur"')]
+    assert 'if not havada and (mod or "").lower() in _OTOMATIK_MODLAR' in govde, (
+        "FBWA arası ya kaldırılmış ya da HAVADA koşulu düşmüş — biri "
+        "uçağı kaldırmaz, diğeri havada rotayı bozar")
+    # başlangıç öğesi de havada/yerde ayrımına bağlı olmalı
+    assert 'baslangic = gorev["ilk_wp_seq"] if havada else 1' in govde, (
+        "başlangıç öğesi sabitlenmemiş: MIS_RESTART=0 olduğu için AUTO "
+        "görevi KALDIĞI YERDEN sürdürür")
+    assert "mission_set_current_send" in govde
+
+
+def test_R87_mod_numaralari_ARAYUZUN_tablosundan_gelir():
+    """⛔ Mod numarasını elle yazmak, iki programın farklı moda 'AUTO'
+    demesi demektir. Tek kaynak: arayuz/control/mav_common.py"""
+    kaynak = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                  encoding="utf-8").read()
+    assert "mav_common.py" in kaynak and "PLANE_MODE_NAMES" in kaynak, (
+        "mod tablosu arayüzün kaynağından okunmuyor")
+    import importlib.util
+    p = os.path.join(REEL, "talon", "arayuz", "control", "mav_common.py")
+    spec = importlib.util.spec_from_file_location("_t_mavcommon", p)
+    mc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mc)
+    # ArduPlane'in bilinen numaraları — tablo bunları vermeli
+    for ad, no in (("MANUAL", 0), ("FBWA", 5), ("AUTO", 10), ("RTL", 11),
+                   ("LOITER", 12), ("TAKEOFF", 13)):
+        assert mc.PLANE_MODE_NAMES[no] == ad, (
+            "mod %d '%s' olmalı, tabloda '%s'"
+            % (no, ad, mc.PLANE_MODE_NAMES.get(no)))
+
+
+def test_R88_gorev_planlayici_KENDI_UDP_aynasini_kullanir():
+    """⛔⛔ ÜÇ TÜKETİCİ, ÜÇ AYRI PORT — paylaşım YASAK.
+
+    Aynı UDP portuna iki soket bağlanırsa çekirdek her datagramı yalnız
+    BİRİNE verir. İkisi de yarı kör kalır: paketlerin yarısını görür,
+    yarısını görmez. Hata da vermez — telemetri "biraz seyrek" görünür.
+    Arayüzün kendi belgesinde yazılı, 18 Ağu 2026'da yaşanmış arıza.
+
+      14552  arayüzün KENDİSİ        (GCS_ENDPOINT)
+      14550  arayüzün ALT SÜREÇLERİ  (MAV_ENDPOINT — preflight, senaryo)
+      14554  GÖREV PLANLAYICI        (gorev_plani.py)
+
+    Planlayıcı 14550'ye alınırsa arayüzün preflight/senaryo alt süreçleri
+    sessizce paket kaybeder.
+    """
+    yay = open(os.path.join(REEL, "talon", "yayinci.py"), encoding="utf-8").read()
+    assert '"--ayna3"' in yay, "üçüncü ayna kaldırılmış"
+    assert "14554" in yay, "planlayıcı aynası 14554 değil"
+    assert '"görev planlayıcı"' in yay, "üçüncü ayna yayın listesine eklenmemiş"
+
+    plan = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+                encoding="utf-8").read()
+    assert 'default="udp:127.0.0.1:14554"' in plan, (
+        "planlayıcının varsayılan MAVLink portu 14554 değil")
+
+    sh = open(os.path.join(REEL, "baslat_talon.sh"), encoding="utf-8").read()
+    assert "gorev_plani.py --mav udp:127.0.0.1:14554" in sh, (
+        "başlatıcı planlayıcıyı yanlış porta bağlıyor")
+    # üç port da BİRBİRİNDEN FARKLI olmalı
+    import re
+    # YALNIZ --ayna* varsayılanları; başlıktaki örnek satırlar sayılmaz.
+    portlar = re.findall(r'"--ayna\d?",\s*default="udpout:127\.0\.0\.1:(\d+)"',
+                         yay)
+    assert len(portlar) == 3, "üç ayna bekleniyordu, bulunan: %s" % portlar
+    assert len(set(portlar)) == 3, (
+        "yayıncıda aynı port iki aynaya verilmiş: %s — tüketiciler "
+        "birbirinin paketini çalar" % portlar)
+
+
+def test_R89_arayuzde_GOREV_PLANLAMA_dugmesi_var():
+    """Kullanıcı iki arayüz arasında URL kovalamasın: tek giriş noktası
+    localhost:8000. Düğme planlayıcıyı (8010) açar, başlatıcı da onu
+    arayüzle birlikte ayağa kaldırır."""
+    h = open(os.path.join(REEL, "talon", "arayuz", "gcs", "static",
+                          "index.html"), encoding="utf-8").read()
+    assert 'id="haritaAc"' in h, "GÖREV PLANLAMA düğmesi yok"
+    assert '":8010"' in h, "düğme planlayıcının portuna gitmiyor"
+    sh = open(os.path.join(REEL, "baslat_talon.sh"), encoding="utf-8").read()
+    assert "gorev_plani.py" in sh, "başlatıcı planlayıcıyı açmıyor"
+    assert "[g]orev_plani" in sh, (
+        "başlatıcı planlayıcıyı TEMİZLEMİYOR — ikinci çalıştırmada port "
+        "8010 dolu kalır")
+    # vendored kodda yapılan her değişiklik KAYNAK.md'de yazılı olmalı
+    k = open(os.path.join(REEL, "talon", "arayuz", "KAYNAK.md"),
+             encoding="utf-8").read()
+    assert "haritaAc" in k, (
+        "vendored arayüzde değişiklik var ama KAYNAK.md'de yazmıyor — "
+        "yukarı akıştan yeniden çekilince sessizce kaybolur")
+
+
+# ============================================================================
+#  R90-R92 · KAMERA OPTİĞİ DİKİŞİ
+#
+#  `dow/gorus/kamera.py` sabitleri SİMÜLASYONDA ölçüldü. Gerçek uçakta
+#  kamera başka: başka mercek, başka montaj açısı, başka çözünürlük.
+#  Değiştirilmezse görsel güdüm menzili ve kerterizi YANLIŞ hesaplar —
+#  ve hata SESSİZDİR. Bu bekçiler dikişin hem AÇIK hem de dokunulmadığında
+#  BİT BİT AYNI kaldığını koruyor.
+# ============================================================================
+def test_R90_optik_dikisi_varsayilanda_SIM_DEGERLERINI_verir():
+    """⛔ Dikişin birinci şartı: hiçbir DOW_OPTIK_* verilmezse simülasyonda
+    ölçülmüş davranış BİREBİR korunur. Varsayılan kayarsa, sim'de ölçtüğümüz
+    her şey sessizce geçersizleşir."""
+    import importlib
+    import subprocess
+    kod = (
+        "import os\n"
+        "for k in list(os.environ):\n"
+        "    if k.startswith('DOW_OPTIK_'): del os.environ[k]\n"
+        "from dow.gorus import kamera as K\n"
+        "print(K.IMG_W, K.IMG_H, K.F_PX, K.TILT_DEG, K.MENZIL_C,"
+        " K.MENZIL_C_KOSEGEN, K.KANAT_M)\n")
+    cikti = subprocess.run([sys.executable, "-c", kod], cwd=KOK,
+                           capture_output=True, text=True)
+    assert cikti.returncode == 0, cikti.stderr
+    p = cikti.stdout.split()
+    assert (int(p[0]), int(p[1])) == (1920, 1080), "çözünürlük varsayılanı kaydı"
+    assert float(p[2]) == 540.4, "F_PX varsayılanı kaydı"
+    assert float(p[3]) == 26.50, "TILT varsayılanı kaydı"
+    assert float(p[4]) == 997.0, "MENZIL_C varsayılanı kaydı"
+    assert float(p[5]) == 1053.6, "MENZIL_C_KOSEGEN varsayılanı kaydı"
+    assert float(p[6]) == 1.718, "KANAT_M varsayılanı kaydı"
+    importlib.import_module("dow.gorus.kamera")
+
+
+def test_R91_optik_env_ile_EZILEBILIR_ve_bozuk_deger_PATLAR():
+    """Gerçek kamera değerleri env'den girer. Bozuk değer SESSİZCE
+    yok sayılmaz — sayılsaydı kullanıcı 'ayarladım' sanıp sim değerleriyle
+    uçardı."""
+    import subprocess
+    kod = ("from dow.gorus import kamera as K\n"
+           "print(K.IMG_W, K.IMG_H, K.F_PX, K.TILT_DEG, K.MENZIL_C, K.CX, K.CY)\n")
+    ort = dict(os.environ, DOW_OPTIK_W="1280", DOW_OPTIK_H="720",
+               DOW_OPTIK_F_PX="402.9", DOW_OPTIK_TILT="18.29",
+               DOW_OPTIK_MENZIL_C="743.4")
+    c = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=ort,
+                       capture_output=True, text=True)
+    assert c.returncode == 0, c.stderr
+    p = c.stdout.split()
+    assert (int(p[0]), int(p[1])) == (1280, 720)
+    assert float(p[2]) == 402.9 and float(p[3]) == 18.29
+    assert float(p[4]) == 743.4
+    # ⛔ CX/CY, IMG_W/H ile BİRLİKTE kaymalı — yoksa kadraj merkezi yanlış
+    assert float(p[5]) == 640.0 and float(p[6]) == 360.0, (
+        "CX/CY çözünürlükle birlikte güncellenmiyor — kerteriz yanlış çıkar")
+
+    bozuk = dict(os.environ, DOW_OPTIK_F_PX="beşyüz")
+    c2 = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=bozuk,
+                        capture_output=True, text=True)
+    assert c2.returncode != 0 and "DOW_OPTIK_F_PX" in c2.stderr, (
+        "bozuk optik değeri sessizce yok sayılıyor — kullanıcı ayarladım "
+        "sanıp sim değerleriyle uçar")
+
+
+def test_R92_cozunurluk_uyusmazligi_YUKSEK_SESLE_uyarir():
+    """⛔ SESSİZ %50 HATA. Kart 1280x720 verirken 1920x1080 sabitleri
+    kullanılırsa aynı hedef 40 px yerine 27 px görünür ve menzil 25 m
+    yerine 37 m denir. Hiçbir yerde patlamaz."""
+    kaynak = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    assert "ÇÖZÜNÜRLÜK UYUŞMAZLIĞI" in kaynak, "uyarı kaldırılmış"
+    bas = kaynak.index("ÇÖZÜNÜRLÜK UYUŞMAZLIĞI")
+    govde = kaynak[bas - 700:bas + 1200]
+    assert "_KAM.IMG_W" in govde and "_KAM.IMG_H" in govde, (
+        "uyarı gerçek kare boyutunu optik kalibrasyonla karşılaştırmıyor")
+    assert "DOW_KAM_W" in govde and "kamera_ayari.py" in govde, (
+        "uyarı iki çözüm yolunu da söylemiyor")
+
+
+def test_R93_kalibrasyon_matematigi_TERSINE_COZULEBILIYOR():
+    """Bilinen bir kameradan üretilmiş ölçümler, aynı sabitleri geri
+    vermeli. Ayrıca AYKIRI değer (kanat ucunu ıskalayan tıklama) sonucu
+    bozmamalı — bu yüzden ortalama değil MEDYAN kullanılıyor."""
+    sys.path.insert(0, os.path.join(REEL, "gercek"))
+    from gercek import kamera_ayari as KA
+
+    F, S, TILT, H = 402.7, 1.718, 18.30, 720
+    olc = [{"px": F * S / R, "mesafe": R} for R in (15.0, 30.0, 45.0, 60.0)]
+    f, tekil, sapma = KA.f_px_hesapla(olc, S)
+    assert abs(f - F) < 0.01, "F_PX geri çıkmıyor: %.3f" % f
+    assert sapma < 1e-6, "kusursuz veride sapma olmamalı"
+
+    y = H / 2.0 - F * math.tan(math.radians(TILT))
+    t = KA.tilt_hesapla(y, H, f)
+    assert abs(t - TILT) < 0.01, "TILT geri çıkmıyor: %.3f" % t
+
+    # aykırı değer: dörtten biri %40 küçük ölçüldü
+    bozuk = list(olc)
+    bozuk[1] = {"px": bozuk[1]["px"] * 0.6, "mesafe": 30.0}
+    f2, _, s2 = KA.f_px_hesapla(bozuk, S)
+    ort = sum(o["px"] * o["mesafe"] / S for o in bozuk) / len(bozuk)
+    assert abs(f2 - F) / F < 0.01, "medyan aykırı değeri yutmadı"
+    assert abs(ort - F) / F > 0.05, (
+        "bu veri ortalamayı bozmalıydı; test artık medyanı sınamıyor")
+    assert s2 > 10.0, "sapma uyarısı tetiklenmeli"
+
+    # simülasyon değerleri geri gelmeli (denetim)
+    sim = [{"px": 540.4 * 1.718 / R, "mesafe": R} for R in (20., 40., 80.)]
+    fs, _, _ = KA.f_px_hesapla(sim, 1.718)
+    assert abs(fs - 540.4) < 0.05
+
+
+def test_R94_spec_FOV_dogru_F_PX_verir_ama_OLCUM_onu_EZER():
+    """Üretici FOV'u başlangıç değeri verir; kanat ucu ölçümü ONU EZER.
+
+    ⛔ NİYE ÖNEMLİ: üretici FOV'ları yuvarlanmış ve çoğu zaman abartılıdır;
+    ayrıca yakalama kartı görüntüyü kırpıyor/ölçekliyorsa gerçek FOV
+    yazandan farklı olur. Spec'in ölçümü ezmesi, ölçmenin anlamını yok
+    ederdi.
+    """
+    from gercek import kamera_ayari as KA
+
+    # F_PX = (yarı_boyut) / tan(FOV/2) — bilinen değerlerle
+    assert abs(KA.f_px_spectan(90.0, 640, 480, "yatay") - 320.0) < 1e-6, (
+        "90° yatay FOV'da F_PX = W/2 olmalı (tan45 = 1)")
+    assert abs(KA.f_px_spectan(90.0, 640, 480, "dikey") - 240.0) < 1e-6
+    kos = math.hypot(640, 480) / 2.0
+    assert abs(KA.f_px_spectan(90.0, 640, 480, "kosegen") - kos) < 1e-6
+
+    # ⛔ EKSEN SEÇİMİ ÖNEMLİ: köşegen kabul, yatay kabulden BÜYÜK çıkar
+    y = KA.f_px_spectan(120.0, 640, 480, "yatay")
+    k = KA.f_px_spectan(120.0, 640, 480, "kosegen")
+    assert k > y * 1.2, ("köşegen/yatay farkı kaybolmuş: %.1f vs %.1f" % (k, y))
+
+    # saçma girdiler None döner, çökmez
+    for kotu in ((0, 640, 480), (180, 640, 480), (120, 0, 480)):
+        assert KA.f_px_spectan(kotu[0], kotu[1], kotu[2], "yatay") is None
+
+    # --- ölçüm spec'i EZER ---
+    eski = dict(KA._D)
+    try:
+        KA._D["w"], KA._D["h"] = 640, 480
+        KA._D["fov"], KA._D["fov_eksen"] = 120.0, "yatay"
+        KA._D["olcumler"], KA._D["ufuk_y"], KA._D["tilt_elle"] = [], None, None
+        r = KA.rapor()
+        assert r["kaynak"] == "spec" and r["f_px"] is None
+        assert abs(r["f_px_kullanilan"] - y) < 0.1
+
+        KA._D["olcumler"] = [{"px": 402.7 * 1.718 / R, "mesafe": R}
+                             for R in (15.0, 30.0, 45.0)]
+        r2 = KA.rapor()
+        assert r2["kaynak"] == "ölçüm", "spec ölçümü ezdi — ölçmenin anlamı kalmaz"
+        assert abs(r2["f_px_kullanilan"] - 402.7) < 0.1
+        assert r2["spec_olcum_farki"] > 50, "spec/ölçüm farkı raporlanmıyor"
+
+        # export, kaynağı DOĞRU söylemeli
+        assert "SPEC" in KA.export_satirlari(r), "spec'i ölçüm gibi sunuyor"
+        assert "ÖLÇÜM" in KA.export_satirlari(r2).upper()
+    finally:
+        KA._D.clear(); KA._D.update(eski)
+
+
+def test_R95_elle_TILT_kabul_edilir_ama_ufuk_olcumu_EZER():
+    """TILT montaj açısından biliniyorsa elle girilebilir. Ama ufka
+    tıklanmışsa ÖLÇÜM geçerlidir — elle girilen değer eskimiş olabilir."""
+    from gercek import kamera_ayari as KA
+    eski = dict(KA._D)
+    try:
+        KA._D["w"], KA._D["h"] = 640, 480
+        KA._D["fov"], KA._D["fov_eksen"] = 120.0, "yatay"
+        KA._D["olcumler"], KA._D["ufuk_y"] = [], None
+        KA._D["tilt_elle"] = 25.0
+        r = KA.rapor()
+        assert r["tilt_deg"] == 25.0 and r["tilt_kaynak"] == "elle"
+
+        # ufka tıkla: 10° verecek bir y seç
+        f = r["f_px_kullanilan"]
+        KA._D["ufuk_y"] = 240.0 - f * math.tan(math.radians(10.0))
+        r2 = KA.rapor()
+        assert abs(r2["tilt_deg"] - 10.0) < 0.05, (
+            "ufuk ölçümü elle girilen değeri ezmedi: %s" % r2["tilt_deg"])
+        assert r2["tilt_kaynak"] == "ufuk ölçümü"
+    finally:
+        KA._D.clear(); KA._D.update(eski)
+
+
+def test_R96_cihaz_taramasi_IKI_ARIZAYI_AYIRIR():
+    """⛔ SAHADA EN ÇOK ZAMAN YİYEN ŞEY: "kamera çalışmıyor".
+
+    İki ayrı arıza var ve çareleri TAMAMEN farklı:
+      (a) kart HİÇ YOK           -> USB'ye tak
+      (b) kart VAR ama kare YOK  -> karta video SİNYALİ girmiyor
+    Cihaz listesini basıp kullanıcıya yorumlatmak yetmiyor; araç hükmü
+    kendi vermeli. 29 Ağu 2026'da tam bu ikisi peş peşe yaşandı.
+    """
+    kaynak = open(os.path.join(REEL, "gercek", "kamera_ayari.py"),
+                  encoding="utf-8").read()
+    assert "YAKALAMA KARTI BULUNAMADI" in kaynak, "(a) hükmü yok"
+    assert "KART VAR AMA KARE VERMİYOR" in kaynak, "(b) hükmü yok"
+    assert "YAKALAMA KARTI HAZIR" in kaynak, "olumlu hüküm yok"
+    # (b) çaresi USB değil SİNYAL olmalı — yanlış yönlendirme saatler yer
+    bas = kaynak.index("KART VAR AMA KARE VERMİYOR")
+    govde = kaynak[bas:bas + 900]
+    assert "VİDEO SİNYALİ" in govde and "VTX" in govde, (
+        "kare yok arızasında kullanıcı USB'ye yönlendiriliyor — oysa sorun "
+        "karta video sinyali girmemesi")
+    # dahili kamerayı kart sanmamalı
+    assert "DAHILI_IPUCU" in kaynak and "KART_IPUCU" in kaynak
+
+
+def test_R97_FOV_dan_gelen_F_PX_cozunurlukle_ORANTILI():
+    """F_PX = (yarı_boyut)/tan(FOV/2) olduğu için çözünürlükle DOĞRU
+    ORANTILIDIR. Kart 720 yerine 640 verirse F_PX %11 düşer ve menzil de
+    aynı oranda kayar — bu yüzden kalibrasyon çözünürlüğü kayda geçer."""
+    from gercek import kamera_ayari as KA
+    a = KA.f_px_spectan(120.0, 720, 480, "yatay")
+    b = KA.f_px_spectan(120.0, 640, 480, "yatay")
+    assert abs(a / b - 720.0 / 640.0) < 1e-9, "orantı bozuk"
+    assert abs(a - 207.8) < 0.1, "120° yatay @720 -> 207.8 bekleniyordu: %.1f" % a
+    # köşegen kabul, 720x480'de yatay kabulden ~%20 büyük
+    k = KA.f_px_spectan(120.0, 720, 480, "kosegen")
+    assert 1.18 < k / a < 1.22, "köşegen/yatay oranı %.3f" % (k / a)
+
+
+def test_R98_sahte_kipi_BACKEND_ARAMAZ():
+    """⛔ `--sahte` = DONANIMSIZ deneme. Backend araması yapmamalı.
+
+    `--bag` varsayılanı "skydagger" olduğu için, skydagger dalı `--sahte`
+    kontrolünden ÖNCE gelirse donanımsız deneme yolu FİİLEN KIRIKTIR:
+    program backend'i arar, bulamaz ve çıkış 2 verir. README'de yazılı
+    "donanımsız deneme" adımı bu yüzden hiç çalışmıyordu (29 Ağu 2026).
+
+    Depoyu yeni çeken biri ilk denemesinde buna çarpar — o yüzden bekçi.
+    """
+    kaynak = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    bas = kaynak.index("# ---------------- 1) ELRS bağı ----------------")
+    govde = kaynak[bas:bas + 2000]
+    i_sahte = govde.index("if a.sahte:")
+    i_sky = govde.index('elif a.bag == "skydagger":')
+    assert i_sahte < i_sky, (
+        "--sahte dalı skydagger dalından SONRA geliyor — donanımsız "
+        "deneme backend arar ve çıkış 2 verir")
+    # ve sahte dalı gerçekten sahte portu kullanmalı
+    sahte_govde = govde[i_sahte:i_sky]
+    assert "_SahtePort()" in sahte_govde
+    assert "SkydaggerBag" not in sahte_govde
