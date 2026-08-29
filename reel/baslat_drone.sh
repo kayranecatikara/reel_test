@@ -47,7 +47,10 @@ export DOW_GPS_KAYNAK=gercek      # truth/filtre GERÇEKTE YOK
 #     uçuştur. İlk otonom denemede araç hedeften KAÇIYORSA ilk bakılacak
 #     yer burasıdır:  DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh
 export DOW_CEV_Y_ISARET="${DOW_CEV_Y_ISARET:-+1.0}"
-export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-0}"
+# ⛔ "oto": yakalama kartını KENDİ BULUR. Varsayılan 0 iken panelde
+#   dizüstünün DAHİLİ kamerası çıkıyordu (sahada görüldü 2026-08-29).
+#   Elle seçmek gerekirse:  DOW_KAM_KAYNAK=/dev/video2 ./baslat_drone.sh
+export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-oto}"
 
 # ---- KUMANDA EKSEN HARİTASI (JUMPER-RC / RadioMaster Pocket, 7 eksen) ----
 # ⛔ ÖLÇÜLDÜ, VARSAYILMADI (araclar/kumanda_kalib.py, 2026-08-29) ve
@@ -138,8 +141,7 @@ then
 fi
 yesil "  Skydagger backend: BULUNDU (127.0.0.1:8766)"
 
-[ -e "/dev/video$DOW_KAM_KAYNAK" ] || \
-    sari "  UYARI: /dev/video$DOW_KAM_KAYNAK yok — kamera açılmayabilir"
+ls /dev/video* >/dev/null 2>&1 || sari "  UYARI: hiç /dev/video* yok — kamera açılmayacak"
 
 echo
 echo "  panel  : http://127.0.0.1:8810"

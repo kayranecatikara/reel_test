@@ -28,12 +28,87 @@ import threading
 import time
 
 
+#: Dizüstünün DAHİLİ kamerasını ele veren kart adları. Yakalama kartı
+#: tercih edilirken bunlar ELENİR.
+#: ⛔ SAHADA GÖRÜLDÜ (2026-08-29): varsayılan indeks 0'dı ve panelde
+#:   yakalama kartı yerine DİZÜSTÜNÜN KENDİ KAMERASI görünüyordu.
+#:   Ölçülen kurulum: video0/1 = "USB webcam" (Quanta, dahili),
+#:   video2/3 = "USB Video" (MacroSilicon MS210x Grabber = EasierCAP).
+DAHILI_IPUCU = ("webcam", "integrated", "facetime", "hd camera", "quanta")
+
+
 class KameraCfg:
-    KAYNAK   = os.environ.get("DOW_KAM_KAYNAK", "0")     # /dev/videoN ya da index
+    #: "oto" = kendiliğinden bul (VARSAYILAN) · "2" / "/dev/video2" = elle
+    KAYNAK   = os.environ.get("DOW_KAM_KAYNAK", "oto")
     GENISLIK = int(os.environ.get("DOW_KAM_W", "0"))     # 0 = sürücü varsayılanı
     YUKSEKLIK = int(os.environ.get("DOW_KAM_H", "0"))
     FPS      = float(os.environ.get("DOW_KAM_FPS", "0"))
     FOURCC   = os.environ.get("DOW_KAM_FOURCC", "MJPG")  # "" = dokunma
+
+
+def _kart_adi(yol):
+    """v4l2 kart adı (sysfs'ten; harici araç gerektirmez)."""
+    try:
+        n = os.path.basename(yol)
+        with open("/sys/class/video4linux/%s/name" % n) as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def cihazlari_tara(kare_dene=True):
+    """Bütün /dev/videoN cihazlarını tara. Döner: [{yol, ad, kare, cozunurluk}]
+
+    ⛔ "AÇILDI" YETMEZ, "KARE VERİYOR" GEREKİR. UVC kameralar her biri için
+       İKİ düğüm oluşturur (biri görüntü, biri meta veri) ve meta düğümü
+       açılır ama kare vermez. Yalnız açılışa bakan bir seçim, sistematik
+       olarak yanlış düğümü seçer.
+    """
+    import cv2
+    import glob
+    sonuc = []
+    for yol in sorted(glob.glob("/dev/video*"),
+                      key=lambda y: int("".join(c for c in y if c.isdigit()) or 0)):
+        ad = _kart_adi(yol)
+        girdi = {"yol": yol, "ad": ad, "kare": False, "cozunurluk": None}
+        if kare_dene:
+            cap = None
+            try:
+                cap = cv2.VideoCapture(yol, cv2.CAP_V4L2)
+                if cap.isOpened():
+                    ok, kare = cap.read()
+                    if ok and kare is not None:
+                        girdi["kare"] = True
+                        girdi["cozunurluk"] = (kare.shape[1], kare.shape[0])
+            except Exception:
+                pass
+            finally:
+                if cap is not None:
+                    cap.release()
+        sonuc.append(girdi)
+    return sonuc
+
+
+def otomatik_bul():
+    """Yakalama kartını seç. Döner: (yol, gerekce) ya da (None, sebep).
+
+    SEÇİM KURALI (sırayla):
+      1. KARE VEREN cihazlar arasından
+      2. adı dahili kamera ipucu İÇERMEYENİ tercih et
+      3. eşitlikte en küçük indeks
+    """
+    cihazlar = cihazlari_tara()
+    calisan = [c for c in cihazlar if c["kare"]]
+    if not calisan:
+        return None, ("hiçbir /dev/video* kare vermiyor (%d cihaz tarandı)"
+                      % len(cihazlar))
+    harici = [c for c in calisan
+              if not any(x in c["ad"].lower() for x in DAHILI_IPUCU)]
+    sec = (harici or calisan)[0]
+    gerekce = "%s — %s %s%s" % (sec["yol"], sec["ad"] or "?",
+                                "%dx%d" % sec["cozunurluk"] if sec["cozunurluk"] else "",
+                                "" if harici else "  ⚠ DAHİLİ kamera olabilir")
+    return sec["yol"], gerekce
 
 
 class Kamera:
@@ -52,14 +127,27 @@ class Kamera:
         self._is = None
         self.n_okunan = 0
         self.n_bos = 0
+        self.gerekce = ""
+        self.secilen = ""
 
     def ac(self):
         import cv2
         k = self.cfg.KAYNAK
-        try:
-            kaynak = int(k)
-        except ValueError:
-            kaynak = k
+        self.gerekce = ""
+        if str(k).strip().lower() in ("oto", "auto", ""):
+            yol, gerekce = otomatik_bul()
+            self.gerekce = gerekce
+            if yol is None:
+                self.hata = ("kamera bulunamadı: %s\n"
+                             "   · yakalama kartı takılı mı?  ls /dev/video*\n"
+                             "   · elle seç:  DOW_KAM_KAYNAK=/dev/video2" % gerekce)
+                return False
+            kaynak = yol
+        else:
+            try:
+                kaynak = int(k)
+            except ValueError:
+                kaynak = k
         try:
             self.cap = cv2.VideoCapture(kaynak, cv2.CAP_V4L2)
             if not self.cap.isOpened():
@@ -82,6 +170,7 @@ class Kamera:
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
                 pass
+            self.secilen = str(kaynak)
         except Exception as e:
             self.hata = "%s: %s" % (type(e).__name__, e)
             return False
@@ -131,6 +220,7 @@ class Kamera:
         w, h = self.cozunurluk()
         _, t, s = self.son_kare()
         return {"acik": self.acik, "genislik": w, "yukseklik": h,
+                "cihaz": self.secilen, "gerekce": self.gerekce,
                 "sayac": s, "yas": round(time.monotonic() - t, 3) if t else -1,
                 "okunan": self.n_okunan, "bos": self.n_bos,
                 "hata": self.hata}

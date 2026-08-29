@@ -2022,3 +2022,90 @@ def test_R67_izin_anahtari_YOKSA_otonomu_BLOKE_ETMIYOR():
     ok, d = ks.tik(simdi=t + 0.1)
     assert d["sebep"] == "pilot_vetosu", (
         "anahtar atanmışken pilot vetosu çalışmalı, sebep: %s" % d["sebep"])
+
+
+# ---------------------------------------------------------------- R68
+def test_R68_kumanda_LINUX_JS_yolunu_tercih_ediyor_SDL_pompasi_YOK():
+    """⛔ SAHADA GÖRÜLDÜ (2026-08-29): "kumandadan kontrol çalışıyor, sonra
+    bir süre sonra donuyor."
+
+    Kök neden: `pygame.event.pump()` KOMUT İŞ PARÇACIĞINDAN çağrılıyordu.
+    SDL, olay kuyruğunun kendi alt sistemini kuran iş parçacığından
+    pompalanmasını bekler; başka iş parçacığından pompalamak DESTEKLENMEZ
+    ve sessizce takılabilir — takılınca komut döngüsü de durur.
+
+    Çözüm: Linux joystick API (/dev/input/jsN) — saf dosya okuması, olay
+    pompası YOK, bloke etmez.
+    """
+    import inspect
+    from gercek import kumanda as KM
+
+    # (a) Linux yolu VAR ve önce denenir
+    assert hasattr(KM, "_JsOkuyucu"), "Linux joystick okuyucusu yok"
+    kaynak = inspect.getsource(KM.Kumanda.ac)
+    assert "/dev/input/js" in kaynak, "ac() önce Linux js API'yi denemeli"
+    sdl_yeri = kaynak.find("_sdl_ac")
+    js_yeri = kaynak.find("/dev/input/js")
+    assert js_yeri < sdl_yeri, "SDL, Linux yolundan ÖNCE deneniyor"
+
+    # (b) Linux yolunda SDL'e HİÇ dokunulmaz
+    oku_kaynak = inspect.getsource(KM.Kumanda.oku)
+    i_js = oku_kaynak.find("_jsapi")
+    i_pump = oku_kaynak.find("event.pump")
+    assert i_js >= 0 and i_js < i_pump, (
+        "oku() SDL pompasını Linux yolundan önce çağırıyor")
+
+    # (c) olay çözümü doğru: 8 baytlık <IhBB
+    assert KM._JsOkuyucu.OLAY.size == 8
+    ham = KM._JsOkuyucu.OLAY.pack(1234, 16384, 0x02, 3)   # eksen 3, yarım
+    _t, deger, tip, no = KM._JsOkuyucu.OLAY.unpack(ham)
+    assert (deger, tip, no) == (16384, 0x02, 3)
+
+    # (d) `ILK` biti de eksen sayılmalı (açılış durumu 0x82 gelir)
+    assert (0x82 & ~KM._JsOkuyucu.ILK) == KM._JsOkuyucu.EKSEN
+
+
+# ---------------------------------------------------------------- R69
+def test_R69_kamera_DAHILI_webcami_ELIYOR():
+    """⛔ SAHADA GÖRÜLDÜ: panelde yakalama kartı yerine dizüstünün DAHİLİ
+    kamerası çıkıyordu (varsayılan indeks 0'dı).
+
+    Ölçülen kurulum:
+        video0/1  "USB webcam"  (Quanta, DAHİLİ)   kare VERMİYOR
+        video2    "USB Video"   (MacroSilicon MS210x = EasierCAP)  ✔ 640x480
+        video3    "USB Video"   (meta veri düğümü)  kare VERMİYOR
+
+    ⛔ "AÇILDI" YETMEZ, "KARE VERİYOR" GEREKİR: UVC cihazlar her biri için
+       İKİ düğüm oluşturur ve meta düğümü açılır ama kare vermez.
+    """
+    from gercek import kamera_yakala as KY
+
+    assert KY.KameraCfg.KAYNAK.lower() in ("oto", "auto"), (
+        "varsayılan 'oto' olmalı; sabit indeks yanlış cihazı seçer")
+
+    # seçim kuralını doğrudan sına (donanımdan bağımsız)
+    ornek = [
+        {"yol": "/dev/video0", "ad": "USB webcam: USB webcam",
+         "kare": False, "cozunurluk": None},
+        {"yol": "/dev/video1", "ad": "USB webcam: USB webcam",
+         "kare": True, "cozunurluk": (1280, 720)},
+        {"yol": "/dev/video2", "ad": "USB Video: USB Video",
+         "kare": True, "cozunurluk": (640, 480)},
+    ]
+    eski = KY.cihazlari_tara
+    try:
+        KY.cihazlari_tara = lambda kare_dene=True: ornek
+        yol, gerekce = KY.otomatik_bul()
+        assert yol == "/dev/video2", (
+            "kare veren DAHİLİ kamera (video1) varken bile HARİCİ cihaz "
+            "seçilmeliydi; seçilen: %s" % yol)
+        # yalnız dahili varsa onu seçer ama UYARIR
+        KY.cihazlari_tara = lambda kare_dene=True: ornek[:2]
+        yol2, g2 = KY.otomatik_bul()
+        assert yol2 == "/dev/video1" and "DAHİLİ" in g2
+        # hiçbiri kare vermiyorsa AÇIK sebep
+        KY.cihazlari_tara = lambda kare_dene=True: [ornek[0]]
+        yol3, g3 = KY.otomatik_bul()
+        assert yol3 is None and "kare vermiyor" in g3
+    finally:
+        KY.cihazlari_tara = eski

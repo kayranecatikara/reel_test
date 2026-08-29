@@ -374,7 +374,8 @@ setInterval(async()=>{
     sat("hedef",hd.var?("var, yaş "+hd.yas+" s"):"YOK")+
     sat("hedef irtifa/hız",(hd.irtifa_ev??"—")+" m / "+(hd.hiz??"—")+" m/s")+
     sat("telemetri yaşı","gps "+(a.yas_gps??"—")+"  duruş "+(a.yas_durus??"—"))+
-    sat("kamera",(kam.genislik||0)+"x"+(kam.yukseklik||0)+" @"+(kam.sayac||0))+
+    sat("kamera",kam.acik?((kam.cihaz||"?")+"  "+(kam.genislik||0)+"x"+
+        (kam.yukseklik||0)+" @"+(kam.sayac||0)):"kapalı")+
     sat("CRC hatası",a.crc_hata??"—")+
     sat("panel→sunucu",postHz+" Hz"+(postHata?("  ⛔ "+postHata+" hata"):""))+
     sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor")
