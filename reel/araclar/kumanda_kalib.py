@@ -149,6 +149,23 @@ def rehberli():
     for ad, (eks, ters) in sonuc.items():
         if ters and ad in ("THROTTLE", "PITCH", "ROLL", "YAW"):
             print("export DOW_KMD_TERS_%-5s=1" % ADI[ad])
+    # ⛔ ARM ÖLÇÜLMEDİYSE BU BİR HATADIR, uyarı değil.
+    #   YAŞANDI (2026-08-29): ARM adımında anahtar çevrilmedi, sonraki
+    #   adımda çevrildi ve ARM ekseni "otonom izni" diye raporlandı.
+    #   Olduğu gibi alınsaydı arm ile otonom izni AYNI anahtara binerdi.
+    if "ARM" not in sonuc:
+        print("\n  ⛔⛔ ARM ÖLÇÜLEMEDİ — bu çıktı KULLANILAMAZ.")
+        print("     ARM emniyet-kritiktir ve TAHMİN EDİLEMEZ. Ayrıca bir")
+        print("     sonraki adımda anahtarı çevirdiysen o adım YANLIŞ")
+        print("     eksene atanmıştır (bizde tam bu oldu).")
+        print("     Tekrar çalıştır; ARM adımında anahtarı GERÇEKTEN çevir.")
+    if "KIP" in sonuc and "ARM" in sonuc and sonuc["KIP"][0] == sonuc["ARM"][0]:
+        print("\n  ⛔⛔ OTONOM İZNİ ile ARM AYNI EKSENDE (%d).\n"
+              "     Bu kabul edilemez: arm ettiğin anda otonoma da izin\n"
+              "     vermiş olursun. İzin için AYRI bir anahtar ata ya da\n"
+              "     DOW_KMD_EKS_KIP=-1 bırak (izin panelden gelir)."
+              % sonuc["ARM"][0])
+        sonuc.pop("KIP")
     cak = {e: a for e, a in kullanilan.items() if len(a) > 1}
     if cak:
         print("\n  ⛔ ÇAKIŞMA — aynı eksene birden çok işlev düştü:")
