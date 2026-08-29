@@ -71,9 +71,12 @@ PARAMETRELER = [
     ("TKOFF_ALT", "m",
      "Görev TAKEOFF öğesinin hedef irtifası.",
      30.0, 120.0, ""),
+    # ⛔ ÖZEL DEĞERLENDİRME: 0 = SINIRSIZ ve elle atış için EN İYİSİDİR.
+    #   Sayısal bant burada yanıltıcı olurdu (0, "50'den küçük" diye
+    #   kötü görünürdü). Aşağıdaki döngüde özel olarak ele alınır.
     ("THR_SLEWRATE", "%/s",
-     "Gazın saniyede en fazla ne kadar değişebileceği.",
-     50.0, 100.0,
+     "Gazın saniyede en fazla ne kadar değişebileceği. 0 = SINIRSIZ.",
+     0.0, 0.0,
      "⛔⛔ ATIŞTA KRİTİK. Düşükse motor tam devre GEÇ çıkar ve uçak o\n"
      "     sürede alçalır. 0 = sınırsız (en hızlı). 100 = 1 saniyede tam."),
     # ⚠ ArduPlane 4.7 BAZI PARAMETRELERİ YENİDEN ADLANDIRDI. Eski adlar
@@ -210,6 +213,17 @@ def main():
         if ad not in deger:
             continue
         v = deger[ad]
+        if ad == "THR_SLEWRATE":
+            # 0 = sınırsız (elle atış için EN İYİ). 1-149 = yavaş rampa.
+            if v == 0:
+                durum = "✔ SINIRSIZ (elle atış için en iyi)"
+            elif v >= 150:
+                durum = "✔"
+            else:
+                durum = "⚠ rampa %.2f s — atışta ölü zaman" % (100.0 / v)
+                uyari.append((ad, v, 0, 0, acik, not_))
+            print("  %-18s %10.4g %-8s %s" % (ad, v, birim, durum))
+            continue
         if alt <= v <= ust:
             durum = "✔"
         else:
@@ -249,8 +263,15 @@ def main():
     print("\n  [1] ÖLÜ ZAMAN — atıştan TAM İTKİYE kadar")
     print("      TKOFF_THR_DELAY %.1f s  +  gaz rampası %.2f s  =  %.2f s"
           % (gecikme, rampa, olu))
-    print("      (rampa = TKOFF_THR_MAX %.0f%% ÷ THR_SLEWRATE %.0f%%/s)"
-          % (thr_max, slew) if slew > 0 else "      (THR_SLEWRATE 0 = sınırsız, rampa yok)")
+    if slew > 0:
+        print("      (rampa = TKOFF_THR_MAX %.0f%% ÷ THR_SLEWRATE %.0f%%/s)"
+              % (thr_max, slew))
+    else:
+        print("      (THR_SLEWRATE 0 = SINIRSIZ, yazılım rampası yok)")
+        print("      ⚠ AMA ESC ve PERVANE ATALETI KALIR: sıfırdan tam devre")
+        print("        ~0.3 s. Gerçek ölü zaman ≈ %.2f s. Yazılımla daha"
+              % (gecikme + 0.3))
+        print("        fazla kısaltılamaz — kalanı ATIŞ HIZINDAN kazanılır.")
     print("      Bu sürede itkisiz düşüş ÜST SINIRI: %.1f m" % dusus)
     print("      Atış irtifası: %.1f m" % ATIS_IRTIFA)
     if olu > 0.4:
@@ -276,6 +297,23 @@ def main():
                   % (gerek_h - ATIS_IRTIFA))
             print("          enerjiye SAHİP DEĞİL. O enerjiyi YALNIZ MOTOR")
             print("          verebilir — ve HEMEN vermek zorundadır.")
+
+    # --- 2b) GEREKEN ATIŞ HIZI ---
+    if v_min:
+        # Motor hemen gelse bile uçak, itkisiz geçen sürede hız kaybeder.
+        # Kabaca: atış hızı, elde olan irtifayı hıza çevirerek AIRSPEED_MIN'e
+        # ulaşabilmeli.  v_atis² + 2·g·h  >=  v_min²
+        v_gerek = (max(0.0, v_min ** 2 - 2 * 9.81 * ATIS_IRTIFA)) ** 0.5
+        print("\n  [2b] GEREKEN ATIŞ HIZI")
+        print("      Elde olan %.1f m irtifayı da hıza çevirirsek:" % ATIS_IRTIFA)
+        print("        v_atış ≥ √(%.0f² − 2·9.81·%.1f) = %.1f m/s"
+              % (v_min, ATIS_IRTIFA, v_gerek))
+        print("      ⭐ YANİ EN AZ %.0f m/s ATMALISIN (%.0f km/h)."
+              % (v_gerek, v_gerek * 3.6))
+        print("        Sakin bir atış ~8 m/s'dir — YETMEZ.")
+        print("        SERT at, KOŞARAK at, RÜZGÂRA KARŞI at.")
+        print("        ⚠ 4 m/s karşı rüzgâr, 8 m/s'lik atışı 12 m/s yapar —")
+        print("          rüzgâra karşı atmak tek başına farkı kapatabilir.")
 
     # --- 3) İLK TIRMANIŞ AÇISI ---
     lvl = deger.get("TKOFF_LVL_PITCH")
