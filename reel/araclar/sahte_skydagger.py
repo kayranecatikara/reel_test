@@ -19,6 +19,7 @@ Kullanım:  python3 reel/araclar/sahte_skydagger.py
 """
 import json
 import math
+import os
 import socket
 import threading
 import time
@@ -152,7 +153,16 @@ def _tcp_istemci(c):
 def _tcp_sunucu():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind((HOST, TCP_PORT)); s.listen(8)
+    try:
+        s.bind((HOST, TCP_PORT)); s.listen(8)
+    except OSError as e:
+        # ⛔ AYRI İŞ PARÇACIĞINDA PATLAYAN İSTİSNA SESSİZDİR: yığın izi
+        #   loga düşer ama süreç yaşamaya devam eder ve "çalışıyor" görünür.
+        #   Açık mesaj ver ve SÜRECİ BİTİR.
+        print("⛔ TCP %d bağlanamadı: %s\n"
+              "   Zaten çalışan bir sahte backend var. Kapat:\n"
+              "     pkill -f '[s]ahte_skydagger'" % (TCP_PORT, e), flush=True)
+        os._exit(2)
     while True:
         c, _ = s.accept()
         c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -162,7 +172,11 @@ def _tcp_sunucu():
 def _udp_sunucu():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind((HOST, UDP_PORT))
+    try:
+        s.bind((HOST, UDP_PORT))
+    except OSError as e:
+        print("⛔ UDP %d bağlanamadı: %s" % (UDP_PORT, e), flush=True)
+        os._exit(2)
     while True:
         try:
             v, _ = s.recvfrom(4096)

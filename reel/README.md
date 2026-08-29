@@ -171,8 +171,14 @@ ve backend'i `.exe`'nin içinden çıkarır.
 
 **Her açılışta:**
 ```bash
-./reel/skydagger/baslat_backend.sh
+./reel/skydagger/baslat_backend.sh          # önceki örneği KENDİSİ kapatır
+./reel/skydagger/baslat_backend.sh --kapat  # yalnız kapat
 ```
+
+> ⛔ **`pkill -f backend.py` İŞE YARAMAZ** — süreç `yukleyici.py` adıyla
+> koşuyor. Bu ayrıntıyı bilmen gerekmesin diye başlatıcı temizliği kendisi
+> yapıyor: önceki örneği kapatır, portun (8765) boşalmasını bekler, sonra
+> açar. Aynısı `baslat_drone.sh` için de geçerli (`--kapat` desteğiyle).
 
 ⛔ **Bu adım atlanamaz.** Bizim yazılımımız backend'e *bağlanır*; onu
 başlatmaz ve ona kurulum komutu **göndermez** (Skydagger rehberi §8:

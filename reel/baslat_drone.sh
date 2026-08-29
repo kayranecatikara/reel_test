@@ -85,6 +85,24 @@ for x in "$@"; do
     esac
 done
 
+# ---- önceki yer kontrolünü temizle (panel portu tutulu kalmasın) ----
+# ⛔ Desen köşeli parantezle kırılır; `pkill -f` kendi kabuğunu öldürebilir
+#   (CLAUDE.md §9, bu depoda yaşandı: exit 144).
+# ⚠ SAHTE BACKEND DE TEMİZLENİR: ana süreç `pkill` ile ölünce çocuk
+#   süreç HAYATTA KALIYOR (trap EXIT çalışmıyor) ve bir sonraki örnek
+#   8766/8767'yi bağlayamıyor. Test sırasında görüldü.
+for _d in "[d]rone_yki" "[s]ahte_skydagger"; do
+    if pgrep -f "$_d" >/dev/null 2>&1; then
+        sari "  önceki süreç kapatılıyor: ${_d//[\[\]]/}"
+        pkill -f "$_d" 2>/dev/null || true
+    fi
+done
+sleep 1
+for _d in "[d]rone_yki" "[s]ahte_skydagger"; do
+    pkill -9 -f "$_d" 2>/dev/null || true
+done
+if [ "${1:-}" = "--kapat" ]; then yesil "  kapatıldı."; exit 0; fi
+
 python3 -c "import cv2,numpy" 2>/dev/null || {
     kirmizi "  HATA: paketler eksik:  pip install -r requirements.txt"; exit 1; }
 
