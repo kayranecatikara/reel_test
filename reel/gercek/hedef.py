@@ -86,17 +86,49 @@ class HedefKaynagi:
         with self._kilit:
             if self._paket is None:
                 return None
-            if (time.monotonic() - self._t) > self.cfg.MAX_YAS_S:
+            if self._yas_kilitli() > self.cfg.MAX_YAS_S:
                 return None
             return dict(self._paket)
 
+    def _yas_kilitli(self):
+        """GERÇEK yaş = paketin bize ulaşma yaşı + VERİNİN KENDİ yaşı.
+
+        ⛔⛔ SESSİZ HAYALET TUZAĞI (2026-08-29'da ölçülerek görüldü):
+           Yayıncı OLAY GÜDÜMLÜ çalışıyor ama bir de periyodik kalp atışı
+           basıyor. Uçakla telsiz bağı koparsa yayıncı SON BİLİNEN konumu
+           basmaya DEVAM eder. Paket taze görünür — çünkü az önce geldi —
+           ama İÇİNDEKİ VERİ saniyelerce eski olabilir.
+           Güdüm o zaman hedefin artık olmadığı bir yere nişan alır.
+
+        `saat_farki` alanı tam bunun için var (haberleşme dokümanı §7.2:
+        "Sunucu saati ile verinin zamanı arasındaki fark, milisaniye").
+        Yayıncımız da aynı alanı aynı anlamda dolduruyor.
+
+        ⚠ 28 m/s giden bir hedef 500 ms'de 14 m yol alır. Bu alanı yok
+          saymak, hedefi 14 m yanlış yerde aramaktır.
+        """
+        if self._paket is None:
+            return 9e9
+        ulasma = time.monotonic() - self._t
+        veri = float(self._paket.get("saat_farki", 0.0)) / 1000.0
+        return ulasma + max(0.0, veri)
+
     def yas(self):
         with self._kilit:
-            return 9e9 if self._paket is None else (time.monotonic() - self._t)
+            return self._yas_kilitli()
 
     def durum(self):
         s = self.son()
+        with self._kilit:
+            ulasma = (9e9 if self._paket is None
+                      else time.monotonic() - self._t)
+            veri_yas = (0.0 if self._paket is None
+                        else float(self._paket.get("saat_farki", 0.0)) / 1000.0)
         return {"var": s is not None, "yas": round(self.yas(), 2),
+                # ⭐ İKİSİ AYRI RAPORLANIR: "paket geliyor ama VERİSİ eski"
+                #   durumunu operatör ancak böyle görebilir.
+                "yas_ulasma": round(min(ulasma, 999.0), 2),
+                "yas_veri": round(veri_yas, 2),
                 "n_paket": self.n_paket, "n_red": self.n_red,
                 "red_sebep": self.son_red_sebep,
                 "hiz": (s or {}).get("hiz"),

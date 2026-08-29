@@ -2263,3 +2263,36 @@ def test_R73_waypoint_METREDEN_DERECEYE_dogru_ceviriliyor():
         assert abs(y - nk["dogu"]) < 0.5, (
             "doğu %d m istendi, %0.1f m çıktı" % (nk["dogu"], y))
         assert oge["z"] == float(nk["irtifa"])
+
+
+# ---------------------------------------------------------------- R74
+def test_R74_hedef_yasi_VERININ_KENDI_YASINI_da_sayiyor():
+    """⛔⛔ SESSİZ HAYALET TUZAĞI (2026-08-29, ölçülerek görüldü).
+
+    Yayıncı olay güdümlü çalışır AMA bir de periyodik kalp atışı basar.
+    Uçakla telsiz bağı koparsa yayıncı SON BİLİNEN konumu basmaya DEVAM
+    eder. Paket taze görünür (az önce geldi) ama İÇİNDEKİ VERİ saniyelerce
+    eski olabilir. Güdüm o zaman hedefin artık olmadığı yere nişan alır.
+
+    `saat_farki` alanı tam bunun için var (haberleşme dokümanı §7.2).
+    28 m/s'de 500 ms = 14 m; yok saymak hedefi 14 m yanlış yerde aramaktır.
+    """
+    h = HedefKaynagi()
+    # taze paket, verisi de taze
+    assert h.besle(_hedef_paket(saat_farki=50))
+    assert h.son() is not None
+    assert h.yas() < 0.5
+
+    # ⛔ PAKET AZ ÖNCE GELDİ ama VERİSİ 3 saniyelik
+    h2 = HedefKaynagi()
+    assert h2.besle(_hedef_paket(saat_farki=3000))
+    assert h2.yas() >= 3.0, "verinin kendi yaşı sayılmamış"
+    assert h2.son() is None, (
+        "paket taze geldi diye 3 saniyelik veri TAZE sayıldı — güdüm "
+        "hedefin artık olmadığı yere nişan alırdı")
+
+    # operatör ikisini AYRI görebilmeli
+    d = h2.durum()
+    assert d["yas_ulasma"] < 0.5, "paket az önce ulaştı"
+    assert d["yas_veri"] >= 3.0, "verinin kendi yaşı ayrı raporlanmalı"
+    assert d["var"] is False
