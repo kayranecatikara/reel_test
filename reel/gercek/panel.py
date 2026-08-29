@@ -105,7 +105,12 @@ SAYFA = r"""<!doctype html><html lang=tr><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>AVCI DRONE — YER KONTROL</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0b0e13;color:#dfe6f0;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
+/* ⛔ `html` DE BOYANIR: yalnız body boyanınca, sayfa içeriğinden uzun
+   kaydırıldığında ya da bir öğe yüksekliği bozulduğunda tarayıcı BEYAZ
+   gösteriyordu (sahada görüldü 2026-08-29). */
+html{background:#0b0e13}
+body{background:#0b0e13;color:#dfe6f0;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;
+     min-height:100vh}
 .ust{display:flex;gap:10px;align-items:center;padding:8px 12px;background:#131924;
      border-bottom:1px solid #223}
 .ust b{font-size:15px;letter-spacing:1px}
@@ -117,7 +122,15 @@ main{display:grid;grid-template-columns:1fr 330px;gap:10px;padding:10px}
 .kutu{background:#131924;border:1px solid #223;border-radius:8px;padding:10px}
 .kutu h3{font-size:11px;letter-spacing:1.5px;color:#7d8aa0;margin-bottom:7px;
          text-transform:uppercase}
-#fpv{width:100%;border-radius:6px;background:#000;display:block}
+/* ⛔ FPV KUTUSU SABİT ORANLI: kaynağı olmayan bir <img> tarayıcıya göre
+   farklı yükseklik alır ve düzeni bozar (beyaz alan). Kap her zaman aynı
+   yeri kaplar; görüntü içine oturur. */
+.fpvkap{position:relative;width:100%;aspect-ratio:16/9;background:#000;
+        border-radius:6px;overflow:hidden;display:flex;align-items:center;
+        justify-content:center}
+.fpvkap span{color:#7d8aa0;font-size:12px}
+#fpv{width:100%;height:100%;object-fit:contain;display:none}
+#fpv.var{display:block}
 table{width:100%;border-collapse:collapse}
 td{padding:2px 0}td:last-child{text-align:right;font-weight:700}
 .sonuk{color:#7d8aa0}
@@ -161,7 +174,8 @@ button.armli{background:#166534;border-color:#4ade80}
 <main>
   <div class=kutu>
     <h3>FPV</h3>
-    <img id=fpv alt="kamera bekleniyor…">
+    <div class=fpvkap><span id=fpvyok>kamera bekleniyor…</span>
+      <img id=fpv alt=""></div>
   </div>
   <div>
     <div class=kutu>
@@ -193,6 +207,13 @@ button.armli{background:#166534;border-color:#4ade80}
   </div>
 </main>
 <script>
+// ⛔ JS HATALARI SESSİZ KALMASIN. Bir istisna, durum döngüsünü ya da
+//   çubuk olaylarını sessizce öldürebilir; operatör bunu "donma" sanar.
+//   Artık ekranda yazar ve konsola düşer.
+let jsHata="";
+window.addEventListener("error",e=>{ jsHata="JS: "+(e.message||"hata"); });
+window.addEventListener("unhandledrejection",e=>{
+  jsHata="JS(promise): "+((e.reason&&e.reason.message)||e.reason||"hata"); });
 let S={thr:0,yaw:0,pitch:0,roll:0,arm:false,izin:false};
 let kumandaVar=false, armBasili=false, kmdYokSay=false;
 // ⛔ PANEL BEKÇİSİ: POST'lar gerçekten gidiyor mu? Donma SESSİZ olmamalı —
@@ -320,9 +341,12 @@ setInterval(async()=>{
   // ⛔ KAMERA YOKKEN /video'YA BAĞLANMA: MJPEG kalıcı bir bağlantı tutar ve
   //   tarayıcının kaynak başına ~6 bağlantısından birini SÜREKLİ meşgul eder.
   //   Kare gelmeyecekse o slotu harcamanın anlamı yok.
-  const fpv=document.getElementById("fpv");
-  if(kam.acik===true && !fpv.src) fpv.src="/video";
-  if(kam.acik!==true && fpv.src){ fpv.removeAttribute("src"); }
+  const fpv=document.getElementById("fpv"), fpvyok=document.getElementById("fpvyok");
+  if(kam.acik===true && !fpv.getAttribute("src")){
+    fpv.src="/video"; fpv.classList.add("var"); fpvyok.style.display="none"; }
+  if(kam.acik!==true && fpv.getAttribute("src")){
+    fpv.removeAttribute("src"); fpv.classList.remove("var");
+    fpvyok.style.display=""; }
   const bg=d.bag||{};
   if(bg.guvenli_pencere) rozet("r_safe",null,"SAFE PENCERESİ "+bg.guvenli_kalan+" s");
   else rozet("r_safe", bg.acik===true, bg.acik===true
@@ -353,7 +377,9 @@ setInterval(async()=>{
     sat("kamera",(kam.genislik||0)+"x"+(kam.yukseklik||0)+" @"+(kam.sayac||0))+
     sat("CRC hatası",a.crc_hata??"—")+
     sat("panel→sunucu",postHz+" Hz"+(postHata?("  ⛔ "+postHata+" hata"):""))+
-    sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor"):"takılı değil");
+    sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor")
+        :("aranıyor… "+((k.sayac&&k.sayac.kmd_arama)||0)+" deneme  "+
+          "(EdgeTX USB Mode = Joystick?)"));
   let u=[];
   if(a.canli===false) u.push("⛔ TELEMETRİ AKMIYOR");
   if(a.koken===false) u.push("⚠ yerel köken kurulmadı (GPS fix bekleniyor)");
@@ -367,6 +393,7 @@ setInterval(async()=>{
                            " s, "+postHata+" hata) — çubuklar GİTMİYOR");
   if(k.insan=="kumanda")
     u.unshift("ℹ KUMANDA SÜRÜYOR — pilot çubuğa dokundu; 3 s durursa panel geri alır");
+  if(jsHata) u.unshift("⛔ "+jsHata);
   document.getElementById("uyarilar").textContent=u.join("   ");
 },200);
 </script></body></html>"""

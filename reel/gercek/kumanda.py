@@ -83,11 +83,24 @@ class Kumanda:
         self.hata = None
 
     def ac(self):
+        """⭐ TEKRAR ÇAĞRILABİLİR: cihaz sonradan takılırsa yakalar.
+
+        ⛔ `pygame.joystick.quit()` + `init()` ŞART: pygame cihaz listesini
+           ÖNBELLEKLER. Sadece `get_count()` çağırmak, program açılışında
+           takılı OLMAYAN bir kumandayı sonradan takınca ASLA görmez.
+           Sahada tam bu yaşandı (2026-08-29): panel "takılı değil" diyordu.
+        """
         try:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             import pygame
             self._pg = pygame
-            pygame.init()
+            if not pygame.get_init():
+                pygame.init()
+            # cihaz listesini TAZELE
+            try:
+                pygame.joystick.quit()
+            except Exception:
+                pass
             pygame.joystick.init()
             if pygame.joystick.get_count() <= self.indeks:
                 self.hata = ("oyun kolu bulunamadı (bulunan: %d). Kumanda "

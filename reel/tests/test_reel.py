@@ -1874,3 +1874,98 @@ def test_R64_gurultu_KENDILIGINDEN_devralmiyor():
         assert d["insan"] == "panel", (
             "tik %d: eşik altı gürültü kumandayı hâkim yaptı" % i)
     assert k.sayac["kmd_hareket"] == 0
+
+
+# ---------------------------------------------------------------- R65
+def test_R65_kumanda_SONRADAN_takilirsa_yakalanir():
+    """⛔ SAHADA GÖRÜLDÜ (2026-08-29): kullanıcı programı başlattı, SONRA
+    kumandayı taktı ve panel sonsuza dek "takılı değil" dedi.
+
+    Sebep: `Kumanda.ac()` yalnız açılışta çağrılıyordu ve başarısız olunca
+    nesne atılıyordu. Sahada sıra HEP şudur — önce yazılım açılır, sonra
+    donanım toplanır. Yani bu, istisna değil NORMAL durumdu.
+    """
+    c = KomutCfg
+
+    class _GecTakilan:
+        """Belirli bir zamandan sonra takılan kumanda."""
+        def __init__(self):
+            self.hazir = False
+            self.n_ac = 0
+            self.takili = False
+            self.c = Cubuklar(-0.7, 0.0, 0.0, 0.0, arm=True, kip_anahtari=True)
+
+        def ac(self):
+            self.n_ac += 1
+            self.hazir = self.takili
+            return self.hazir
+
+        def oku(self):
+            return self.c if self.hazir else None
+
+    km = _GecTakilan()
+    sp = _SahtePort(); bag = ElrsBag(sahte_port=sp); bag.ac()
+    k = KomutSureci(bag, km)
+    t = 3000.0
+
+    # --- açılışta kumanda YOK: panel sürer, ama nesne ATILMAZ ---
+    for i in range(5):
+        tt = t + i * c.KMD_ARA_S
+        k.panel_yaz(-0.3, 0, 0, 0, arm=True, t=tt)
+        ok, d = k.tik(simdi=tt)
+        assert d["insan"] == "panel"
+        assert d["kmd_takili"] is False
+    assert km.n_ac >= 3, ("kumanda yeniden ARANMADI (%d deneme) — sonradan "
+                          "takılan cihaz asla yakalanmazdı" % km.n_ac)
+
+    # --- kullanıcı kumandayı TAKTI ---
+    km.takili = True
+    tt = t + 20.0
+    k.panel_yaz(-0.3, 0, 0, 0, arm=True, t=tt)
+    ok, d = k.tik(simdi=tt)
+    assert d["kmd_takili"] is True, "sonradan takılan kumanda yakalanmadı"
+    # ilk okuma referans alınır: henüz HÂKİM değil, panel sürmeye devam
+    assert d["insan"] == "panel"
+
+    # --- pilot çubuğu oynattı -> devralır ---
+    km.c.roll = 0.5
+    tt += 0.1
+    k.panel_yaz(-0.3, 0, 0, 0, arm=True, t=tt)
+    ok, d = k.tik(simdi=tt)
+    assert d["insan"] == "kumanda", "takıldıktan sonra oynatıldı ama devralmadı"
+
+    # --- kumanda ÇIKARILDI -> panel geri alır, referans temizlenir ---
+    km.hazir = False; km.takili = False
+    tt += c.KMD_HAKIMIYET_S + 0.1
+    k.panel_yaz(-0.3, 0, 0, 0, arm=True, t=tt)
+    ok, d = k.tik(simdi=tt)
+    assert d["kmd_takili"] is False and d["insan"] == "panel"
+
+
+# ---------------------------------------------------------------- R66
+def test_R66_ana_program_kumanda_nesnesini_ATMIYOR():
+    """`drone_yki.py` kumanda açılamazsa nesneyi `None` yapmamalı.
+
+    ⛔ `None` yaparsa hakem sıcak takmayı DENEYEMEZ ve kumanda o oturumda
+       bir daha asla bulunamaz.
+    """
+    import inspect
+    sys.path.insert(0, REEL)
+    import drone_yki
+    #   ⚠ YORUMA DEĞİL KODA BAKILIR: ilk yazdığımda düz metin araması
+    #     yapmıştım ve "Eskiden `kmd = None` yapıyordum" AÇIKLAMASINA
+    #     takıldı. Kaynağı ayrıştırıp gerçek atamalara bakmak gerekiyor.
+    import ast
+    agac = ast.parse(inspect.getsource(drone_yki).replace("\t", "    "))
+    atamalar = []
+    for d in ast.walk(agac):
+        if isinstance(d, ast.Assign):
+            for h in d.targets:
+                if isinstance(h, ast.Name) and h.id == "kmd":
+                    atamalar.append(ast.dump(d.value))
+    assert atamalar, "drone_yki.py'de `kmd` ataması yok"
+    for a in atamalar:
+        assert "Constant(value=None)" not in a, (
+            "drone_yki.py kumanda nesnesini None yapıyor — sıcak takma "
+            "çalışmaz, sonradan takılan kumanda asla bulunmaz")
+    assert any("Kumanda" in a for a in atamalar)

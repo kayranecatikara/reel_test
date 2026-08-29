@@ -80,6 +80,12 @@ class KomutCfg:
     #: Hareketten sonra kumanda bu kadar süre HÂKİM kalır. Pilot çubuğu
     #: ortada tutarken (hareket yokken) panelin devralmasını engeller.
     KMD_HAKIMIYET_S = float(os.environ.get("DOW_KMT_KMD_HAKIM", 3.0))
+    #: ⛔ KUMANDA SONRADAN TAKILIRSA YAKALANMALI (2026-08-29, sahada görüldü).
+    #:   `Kumanda.ac()` yalnız açılışta çağrılıyordu; kullanıcı programı
+    #:   başlatıp SONRA kumandayı takınca cihaz HİÇ algılanmıyordu ve panel
+    #:   "takılı değil" diyordu. Sahada bu her seferinde olur: önce yazılım
+    #:   açılır, sonra donanım toplanır.
+    KMD_ARA_S = float(os.environ.get("DOW_KMT_KMD_ARA", 2.0))
     #: Pilotun VETO anahtarı zorunlu mu?
     #:   True  (varsayılan): otonom, ancak pilotun anahtarı İZİN VERİYORSA
     #:                       çalışır. Anahtar kapanınca ANINDA manuele düşer.
@@ -135,6 +141,7 @@ class KomutSureci:
         self._kmd_onceki = None       # son okunan çubuk değerleri
         self._kmd_hareket_t = -9e9    # son HAREKET anı
         self._kmd_takili = False
+        self._kmd_ara_t = 0.0         # son bağlanma denemesi
         self._calisiyor = False
         self._is = None
         # §5.1 mekanizma / teşhis
@@ -192,8 +199,27 @@ class KomutSureci:
         #     KMD_HAKIMIYET_S boyunca öyle kalır.
         #   ⛔ ARM/İZİN ANAHTARI DA "HAREKET"TİR: pilot arm anahtarını
         #     çevirdiği an devralmalı — yoksa acil disarm gecikirdi.
+        # ⭐ SICAK TAKMA: kumanda kapalıysa periyodik olarak yeniden dene.
+        #   Çıkarılırsa `oku()` None döner ve `hazir` düşer; bir sonraki
+        #   aramada tekrar yakalanır. Deneme ARALIKLIDIR — her tikte pygame
+        #   sorgulamak 50 Hz'de gereksiz yük olurdu.
+        #   ⚠ `hazir`/`ac()` OLMAYAN bir kaynak da meşrudur (test sahtesi,
+        #     başka bir girdi cihazı). Öyleyse "zaten hazır" sayılır —
+        #     eksik alanı hataya çevirmek, hakem döngüsünü öldürürdü.
+        if (self.kumanda is not None
+                and not getattr(self.kumanda, "hazir", True)
+                and callable(getattr(self.kumanda, "ac", None))
+                and (simdi - self._kmd_ara_t) >= c.KMD_ARA_S):
+            self._kmd_ara_t = simdi
+            self.sayac["kmd_arama"] = self.sayac.get("kmd_arama", 0) + 1
+            if self.kumanda.ac():
+                self._kmd_onceki = None          # yeni cihaz: referansı sıfırla
+                self.sayac["kmd_baglandi"] = self.sayac.get("kmd_baglandi", 0) + 1
+
         kmd = self.kumanda.oku() if self.kumanda is not None else None
         self._kmd_takili = kmd is not None
+        if kmd is None:
+            self._kmd_onceki = None              # kopunca referans temizlenir
         if kmd is not None:
             # ⛔ DEĞERLER SAKLANIR, NESNE REFERANSI DEĞİL — bekçi R63 bunu
             #   yakaladı. Kaynak her çağrıda AYNI nesneyi döndürürse (ki
@@ -305,8 +331,13 @@ class KomutSureci:
             # sebep sadece "paket_kesildi"dir — operatöre yanlış ipucu
             # vermemek için ikisi ayrı tutulur.
             _teslimden = teslim_engeli and self.kip == "OTONOM" and oto_taze
+            # ⚠ TEŞHİS ALANLARI BU DALDA DA OLMALI: eksik olunca panel
+            #   "kumanda: —" gösteriyor ve operatör sistemin ARAYIP
+            #   aramadığını göremiyor.
             self.durum = {"kaynak": "YOK", "insan": self.insan_kaynagi,
                           "komut": None,
+                          "kmd_takili": self._kmd_takili,
+                          "kmd_hakim": False,
                           "sebep": ("teslim_suresi" if _teslimden
                                     else "paket_kesildi"),
                           "arm": self._son_arm, "kmd_kopuk": kmd_kopuk}

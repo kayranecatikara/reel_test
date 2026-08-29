@@ -137,21 +137,27 @@ def main():
         print("  ELRS      : %s @ %d baud" % (a.elrs, a.baud))
 
     # ---------------- 2) kumanda ----------------
+    # ⛔ NESNE ASLA ATILMAZ. Eskiden `kmd = None` yapıyordum ve o an takılı
+    #   olmayan kumanda BİR DAHA ARANMIYORDU. Sahada sıra hep şudur: önce
+    #   yazılım açılır, sonra donanım toplanır — yani kumanda neredeyse
+    #   HER ZAMAN sonradan takılır. Hakem `hazir` False iken 2 s'de bir
+    #   yeniden dener (KomutCfg.KMD_ARA_S).
     kmd = Kumanda()
     if kmd.ac():
         print("  KUMANDA   : %s (%d eksen)" % (kmd.ad, kmd.n_eksen))
     else:
-        kmd = None
-        print("  KUMANDA   : YOK — panelin sanal çubukları kullanılacak")
-        print("              (%s)" % Kumanda().hata)
+        print("  KUMANDA   : şu an yok — panelin sanal çubukları kullanılır")
+        print("              (%s)" % kmd.hata)
+        print("              ⭐ SONRADAN TAKILIRSA kendiliğinden yakalanır")
+        print("              ⚠ EdgeTX: SYS → Hardware → USB Mode = Joystick")
 
     # ---------------- 3) hakem ----------------
+    # ⛔ ÖLÜ DAL SİLİNDİ (§5.12): `kmd` artık ASLA None olmuyor (sıcak takma
+    #   için nesne korunuyor), dolayısıyla `if kmd is None:` hiç çalışmıyordu.
+    #   İçindeki `VETO_ZORUNLU = True` zaten varsayılandı — davranış aynı.
+    #   Otonom izni: kumanda takılıysa onun anahtarı, değilse panelin
+    #   `izin` alanı. İkisi de aynı bayrağı besler.
     ks = KomutSureci(bag, kmd)
-    if kmd is None:
-        # ⛔ Fiziksel kumanda yoksa VETO ANAHTARI da yok; izin panelden gelir.
-        #   Bu bilinçli bir GEVŞETMEDİR ve sahada kumanda takılıysa
-        #   otomatik olarak sıkılaşır.
-        ks.cfg.VETO_ZORUNLU = True     # panel `izin` alanını gönderiyor
 
     # ---------------- 4) hedef kaynağı ----------------
     hedef = HedefKaynagi()
