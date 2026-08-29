@@ -77,6 +77,20 @@ def _durum():
             pass
     if hd is not None:
         d["hedef"] = hd.durum()
+        # ⭐ HEDEFİN YEREL KONUMU — YALNIZ 3B GÖRSELLEŞTİRME İÇİN.
+        # ⛔ YARIŞMA KURALI (CLAUDE.md §10) İHLAL EDİLMİYOR: kural "görsel
+        #   temas varken GPS ile GÜDÜM"ü yasaklar, GÖSTERİMİ değil. Bu
+        #   değer `Beyin`e HİÇ girmez; doğrudan hedef kaynağından ve
+        #   çerçeveden hesaplanır, güdüm yolundan geçmez.
+        try:
+            h = hd.son()
+            if h and gb is not None and gb.cerceve.hazir:
+                hx, hy, hz = gb.cerceve.metreye(
+                    h["enlem"], h["boylam"], irtifa_yerden=h["irtifa_ev"])
+                d["hedef_konum"] = {"kuzey": round(hx, 1), "dogu": round(hy, 1),
+                                    "yukari": round(hz, 1)}
+        except Exception:
+            pass
     if sv is not None:
         d["sunucu"] = sv.durum()
     if dk is not None:
@@ -159,6 +173,10 @@ button.aktif{background:#1d4ed8;border-color:#60a5fa;color:#fff}
 button.arm{background:#7f1d1d;border-color:#ef4444}
 button.armli{background:#166534;border-color:#4ade80}
 .uyarilar{margin-top:8px;font-size:11px;color:#ffd166;min-height:16px}
+#uc3b{width:100%;height:260px;display:block;background:#080b10;border-radius:6px;
+      cursor:grab;touch-action:none}
+#uc3b:active{cursor:grabbing}
+.uc3bbilgi{display:flex;gap:12px;margin-top:6px;font-size:11px}
 </style></head><body>
 <div class=ust>
   <b>AVCI DRONE — YER KONTROL</b>
@@ -203,6 +221,16 @@ button.armli{background:#166534;border-color:#4ade80}
     <div class=kutu style="margin-top:10px">
       <h3>Telemetri</h3>
       <table id=telem></table>
+    </div>
+    <div class=kutu style="margin-top:10px">
+      <h3>3B Konum <span class=sonuk style="text-transform:none">
+        · sürükle=döndür · tekerlek=yakınlaş · çift tık=sıfırla</span></h3>
+      <canvas id=uc3b></canvas>
+      <div class=uc3bbilgi>
+        <span style="color:#6fb2ff">● drone</span>
+        <span style="color:#ff9f43">● hedef</span>
+        <span id=uc3bmesafe class=sonuk></span>
+      </div>
     </div>
   </div>
 </main>
@@ -312,12 +340,158 @@ bArm.addEventListener("pointercancel",armBirak);
 function manuelGonder(){
   if(ucusta>0){ setTimeout(manuelGonder,10); return; }
   ucusta++;
-  fetch("/api/manuel",{method:"POST",body:JSON.stringify(S)})
+  // ⛔ ZAMAN AŞIMI ŞART: zaman aşımsız bir fetch SONSUZA KADAR asılı
+  //   kalabilir; `ucusta` bir daha düşmez ve komut akışı KALICI durur.
+  //   AbortController bunu imkânsız kılar.
+  const iptal=new AbortController();
+  const zam=setTimeout(()=>iptal.abort(),800);
+  fetch("/api/manuel",{method:"POST",body:JSON.stringify(S),signal:iptal.signal})
     .then(r=>{ sonBasarili=Date.now(); postHata=0; postSay++; })
     .catch(e=>{ postHata++; })
-    .finally(()=>{ ucusta--; setTimeout(manuelGonder,33); });
+    .finally(()=>{ clearTimeout(zam); ucusta--; setTimeout(manuelGonder,33); });
 }
 manuelGonder();
+
+// ⛔ FPV: MJPEG YERİNE PERİYODİK TEK KARE.
+//   Kalıcı MJPEG bağlantısı tarayıcının bağlantı havuzunu (kaynak başına 6)
+//   sürekli meşgul ediyordu ve sayfa donuyordu. Tek kare her seferinde
+//   bağlantıyı bırakır. Ayrıca ÖNCEKİ KARE BİTMEDEN yenisi istenmez —
+//   yavaş bir kare, komut akışını asla geciktiremez.
+let kameraVar=false, kareUcusta=false, kareHz=0, kareSay=0;
+const fpvImg=document.getElementById("fpv"), fpvYok=document.getElementById("fpvyok");
+function kareAl(){
+  if(!kameraVar || kareUcusta || document.hidden){ setTimeout(kareAl,200); return; }
+  kareUcusta=true;
+  const im=new Image();
+  im.onload=()=>{ fpvImg.src=im.src; fpvImg.classList.add("var");
+                  fpvYok.style.display="none"; kareSay++;
+                  kareUcusta=false; setTimeout(kareAl,66); };   // ~15 Hz
+  im.onerror=()=>{ kareUcusta=false; setTimeout(kareAl,500); };
+  im.src="/kare.jpg?t="+Date.now();
+}
+kareAl();
+setInterval(()=>{ kareHz=kareSay; kareSay=0; },1000);
+
+// ======================================================================
+//  3B KONUM GÖRÜNÜMÜ — drone ve hedef, döndürülebilir
+// ======================================================================
+// ⛔ HARİCİ KÜTÜPHANE YOK. Panel sahada İNTERNETSİZ çalışır; CDN'den
+//   three.js çekmek orada sessizce başarısız olurdu. Nokta bulutu +
+//   yörünge kamerası için gereken matematik zaten birkaç satır.
+//
+// ÇERÇEVE: x=KUZEY, y=DOĞU, z=YUKARI (gercek/arayuz.py sözleşmesi).
+// Yansıtma: önce yatay dönüş (azimut), sonra yükseliş, sonra zayıf
+// perspektif. Derinlik `d`, uzaktaki noktayı küçültmek için kullanılır.
+const C3 = {az:-0.6, el:0.45, olcek:1.0, sur:false, sx:0, sy:0,
+            droneIz:[], hedefIz:[], IZ_MAX:400};
+const c3 = document.getElementById("uc3b");
+const g3 = c3.getContext("2d");
+
+function c3boyut(){
+  const r=c3.getBoundingClientRect();
+  const o=window.devicePixelRatio||1;
+  c3.width=Math.max(1,Math.round(r.width*o));
+  c3.height=Math.max(1,Math.round(r.height*o));
+  g3.setTransform(o,0,0,o,0,0);
+  return [r.width, r.height];
+}
+c3.addEventListener("pointerdown",e=>{C3.sur=true;C3.sx=e.clientX;C3.sy=e.clientY;
+  try{c3.setPointerCapture(e.pointerId);}catch(_){}});
+c3.addEventListener("pointermove",e=>{ if(!C3.sur)return;
+  C3.az += (e.clientX-C3.sx)*0.01;
+  C3.el = Math.max(-1.45, Math.min(1.45, C3.el + (e.clientY-C3.sy)*0.01));
+  C3.sx=e.clientX; C3.sy=e.clientY; });
+const c3birak=()=>{C3.sur=false;};
+c3.addEventListener("pointerup",c3birak);
+c3.addEventListener("pointercancel",c3birak);
+window.addEventListener("blur",c3birak);
+c3.addEventListener("wheel",e=>{ e.preventDefault();
+  C3.olcek *= (e.deltaY>0? 0.9 : 1.1);
+  C3.olcek = Math.max(0.15, Math.min(8, C3.olcek)); }, {passive:false});
+c3.addEventListener("dblclick",()=>{ C3.az=-0.6; C3.el=0.45; C3.olcek=1.0; });
+
+function c3ciz(){
+  const [W,H]=c3boyut();
+  g3.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2+20;
+  const noktalar=C3.droneIz.concat(C3.hedefIz);
+  // otomatik ölçek: bütün noktalar sığsın (en az 20 m yarıçap)
+  let r=20;
+  for(const p of noktalar) r=Math.max(r,Math.abs(p[0]),Math.abs(p[1]),Math.abs(p[2]));
+  const K=(Math.min(W,H)*0.38/r)*C3.olcek;
+  const ca=Math.cos(C3.az), sa=Math.sin(C3.az);
+  const ce=Math.cos(C3.el), se=Math.sin(C3.el);
+  const yans=(x,y,z)=>{
+    const x1= x*ca + y*sa;
+    const y1=-x*sa + y*ca;
+    const d = y1*ce + z*se;               // derinlik
+    const u = -y1*se + z*ce;              // ekran yukarı
+    const k = 900/(900+d*K*0.5);          // zayıf perspektif
+    return [cx + x1*K*k, cy - u*K*k, d];
+  };
+  // --- zemin ızgarası ---
+  const adim=Math.pow(10,Math.round(Math.log10(r/3)));
+  g3.strokeStyle="#18202e"; g3.lineWidth=1; g3.beginPath();
+  for(let i=-3;i<=3;i++){
+    let a=yans(i*adim,-3*adim,0), b=yans(i*adim,3*adim,0);
+    g3.moveTo(a[0],a[1]); g3.lineTo(b[0],b[1]);
+    a=yans(-3*adim,i*adim,0); b=yans(3*adim,i*adim,0);
+    g3.moveTo(a[0],a[1]); g3.lineTo(b[0],b[1]);
+  }
+  g3.stroke();
+  // --- eksenler ---
+  const eks=[[3*adim,0,0,"#3d5a80","K"],[0,3*adim,0,"#3d8055","D"],[0,0,2*adim,"#805a3d","↑"]];
+  for(const [x,y,z,renk,et] of eks){
+    const o=yans(0,0,0), p=yans(x,y,z);
+    g3.strokeStyle=renk; g3.lineWidth=1.5;
+    g3.beginPath(); g3.moveTo(o[0],o[1]); g3.lineTo(p[0],p[1]); g3.stroke();
+    g3.fillStyle=renk; g3.font="11px monospace"; g3.fillText(et,p[0]+4,p[1]);
+  }
+  // --- izler ---
+  const izCiz=(iz,renk)=>{
+    if(iz.length<2) return;
+    g3.strokeStyle=renk; g3.lineWidth=1.2; g3.globalAlpha=0.55; g3.beginPath();
+    let ilk=true;
+    for(const p of iz){ const q=yans(p[0],p[1],p[2]);
+      if(ilk){g3.moveTo(q[0],q[1]);ilk=false;} else g3.lineTo(q[0],q[1]); }
+    g3.stroke(); g3.globalAlpha=1;
+  };
+  izCiz(C3.droneIz,"#2f7dd1"); izCiz(C3.hedefIz,"#c77a20");
+  // --- noktalar + aralarındaki çizgi ---
+  const son=(iz)=>iz.length?iz[iz.length-1]:null;
+  const dP=son(C3.droneIz), hP=son(C3.hedefIz);
+  if(dP&&hP){
+    const a=yans(...dP), b=yans(...hP);
+    g3.strokeStyle="#3a4a63"; g3.setLineDash([4,4]);
+    g3.beginPath(); g3.moveTo(a[0],a[1]); g3.lineTo(b[0],b[1]); g3.stroke();
+    g3.setLineDash([]);
+  }
+  const noktaCiz=(p,renk,ad)=>{
+    if(!p) return;
+    const q=yans(p[0],p[1],p[2]);
+    // yerden dikey çizgi (yükseklik hissi)
+    const t=yans(p[0],p[1],0);
+    g3.strokeStyle=renk; g3.globalAlpha=0.35; g3.beginPath();
+    g3.moveTo(q[0],q[1]); g3.lineTo(t[0],t[1]); g3.stroke(); g3.globalAlpha=1;
+    g3.fillStyle=renk; g3.beginPath(); g3.arc(q[0],q[1],5,0,6.284); g3.fill();
+    g3.fillStyle="#dfe6f0"; g3.font="10px monospace";
+    g3.fillText(ad+"  "+p[2].toFixed(0)+"m", q[0]+8, q[1]-6);
+  };
+  noktaCiz(hP,"#ff9f43","hedef");
+  noktaCiz(dP,"#6fb2ff","drone");
+  if(dP&&hP){
+    const m=Math.hypot(dP[0]-hP[0],dP[1]-hP[1],dP[2]-hP[2]);
+    document.getElementById("uc3bmesafe").textContent="mesafe "+m.toFixed(0)+" m";
+  }
+}
+function c3ekle(iz,p){
+  const s=iz[iz.length-1];
+  if(!s || Math.abs(s[0]-p[0])>0.3 || Math.abs(s[1]-p[1])>0.3
+        || Math.abs(s[2]-p[2])>0.3){
+    iz.push(p); if(iz.length>C3.IZ_MAX) iz.shift();
+  } else { iz[iz.length-1]=p; }
+}
+setInterval(c3ciz, 100);
 
 const sat=(a,b,s)=>`<tr><td class=sonuk>${a}</td><td class="${s||''}">${b}</td></tr>`;
 function rozet(id,ok,metin){ const e=document.getElementById(id);
@@ -326,9 +500,15 @@ let durumUcusta=false;
 setInterval(async()=>{
   if(durumUcusta) return;               // geri basınç: kuyruk yığılmasın
   durumUcusta=true;
-  let d; try{ d=await (await fetch("/api/durum")).json(); }
-  catch(e){ durumUcusta=false; return; }
-  durumUcusta=false;
+  const iptal=new AbortController();
+  const zam=setTimeout(()=>iptal.abort(),1500);
+  let d;
+  try{ d=await (await fetch("/api/durum",{signal:iptal.signal})).json(); }
+  catch(e){ clearTimeout(zam); durumUcusta=false; return; }
+  clearTimeout(zam); durumUcusta=false;
+  // ⛔ TÜM GÖSTERİM İŞİ TRY İÇİNDE: burada atılan bir istisna her tikte
+  //   tekrarlanır ve arayüz "donmuş" görünür. Hata ekrana yazılır.
+  try{
   const a=d.arac||{}, k=d.komut||{}, kam=d.kamera||{}, sv=d.sunucu||{};
   rozet("r_link", a.canli===true, "LINK "+(a.link_lq>=0?a.link_lq+"%":"—"));
   rozet("r_gps",  a.koken===true, "GPS "+(a.uydu||0));
@@ -341,12 +521,7 @@ setInterval(async()=>{
   // ⛔ KAMERA YOKKEN /video'YA BAĞLANMA: MJPEG kalıcı bir bağlantı tutar ve
   //   tarayıcının kaynak başına ~6 bağlantısından birini SÜREKLİ meşgul eder.
   //   Kare gelmeyecekse o slotu harcamanın anlamı yok.
-  const fpv=document.getElementById("fpv"), fpvyok=document.getElementById("fpvyok");
-  if(kam.acik===true && !fpv.getAttribute("src")){
-    fpv.src="/video"; fpv.classList.add("var"); fpvyok.style.display="none"; }
-  if(kam.acik!==true && fpv.getAttribute("src")){
-    fpv.removeAttribute("src"); fpv.classList.remove("var");
-    fpvyok.style.display=""; }
+  kameraVar = (kam.acik===true);
   const bg=d.bag||{};
   if(bg.guvenli_pencere) rozet("r_safe",null,"SAFE PENCERESİ "+bg.guvenli_kalan+" s");
   else rozet("r_safe", bg.acik===true, bg.acik===true
@@ -377,7 +552,8 @@ setInterval(async()=>{
     sat("kamera",kam.acik?((kam.cihaz||"?")+"  "+(kam.genislik||0)+"x"+
         (kam.yukseklik||0)+" @"+(kam.sayac||0)):"kapalı")+
     sat("CRC hatası",a.crc_hata??"—")+
-    sat("panel→sunucu",postHz+" Hz"+(postHata?("  ⛔ "+postHata+" hata"):""))+
+    sat("panel→sunucu",postHz+" Hz"+(postHata?("  ⛔ "+postHata+" hata"):"")+
+        "   fpv "+kareHz+" Hz")+
     sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor")
         :("aranıyor… "+((k.sayac&&k.sayac.kmd_arama)||0)+" deneme  "+
           "(EdgeTX USB Mode = Joystick?)"));
@@ -394,8 +570,14 @@ setInterval(async()=>{
                            " s, "+postHata+" hata) — çubuklar GİTMİYOR");
   if(k.insan=="kumanda")
     u.unshift("ℹ KUMANDA SÜRÜYOR — pilot çubuğa dokundu; 3 s durursa panel geri alır");
+  // --- 3B izleri besle ---
+  if(ko.kuzey!==undefined) c3ekle(C3.droneIz,[ko.kuzey,ko.dogu,ko.yukari]);
+  const hk=d.hedef_konum;
+  if(hk) c3ekle(C3.hedefIz,[hk.kuzey,hk.dogu,hk.yukari]);
   if(jsHata) u.unshift("⛔ "+jsHata);
   document.getElementById("uyarilar").textContent=u.join("   ");
+  }catch(e){ jsHata="JS(durum): "+(e&&e.message||e);
+             document.getElementById("uyarilar").textContent="⛔ "+jsHata; }
 },200);
 </script></body></html>"""
 
@@ -427,8 +609,10 @@ class _Islem(BaseHTTPRequestHandler):
         if self.path == "/api/durum":
             return self._yaz(200, "application/json",
                              json.dumps(_durum()).encode("utf-8"))
+        if self.path.startswith("/kare.jpg"):
+            return self._tek_kare()
         if self.path == "/video":
-            return self._video()
+            return self._video()          # ⚠ eski MJPEG; artık kullanılmıyor
         self._yaz(404, "text/plain", b"yok")
 
     def do_POST(self):
@@ -456,7 +640,32 @@ class _Islem(BaseHTTPRequestHandler):
                              json.dumps({"ok": ok, "mesaj": mesaj}).encode())
         self._yaz(404, "application/json", b'{"ok":0}')
 
-    # ---------------- MJPEG ----------------
+    # ---------------- TEK KARE (varsayılan yol) ----------------
+    def _tek_kare(self):
+        """Tek bir JPEG döndürür ve BAĞLANTIYI BIRAKIR.
+
+        ⛔⛔ MJPEG NİYE BIRAKILDI — SAHADA DEFALARCA DONDU (2026-08-29):
+           `<img src="/video">` KALICI bir HTTP bağlantısı tutar. Chrome'un
+           kaynak başına eşzamanlı bağlantı sınırı HTTP/1.1'de 6'dır. Biri
+           kalıcı olarak MJPEG'e gidince geriye 5 kalır; üstüne 30 Hz POST
+           ve 5 Hz durum isteği binince havuz tıkanır ve SAYFA DONAR —
+           sunucu tarafı tamamen sağlıklı olsa bile (ölçüldü: 0.8 ms, 0 hata).
+           Tek kare yolu bağlantıyı hemen bırakır; havuz asla dolmaz.
+        """
+        import cv2
+        kam = _D["kamera"]
+        if kam is None:
+            return self._yaz(503, "text/plain", b"kamera yok")
+        kare, _t, _s = kam.son_kare()
+        if kare is None:
+            return self._yaz(503, "text/plain", b"kare yok")
+        ok, buf = cv2.imencode(".jpg", _cizim(kare.copy()),
+                               [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if not ok:
+            return self._yaz(500, "text/plain", b"kodlanamadi")
+        self._yaz(200, "image/jpeg", buf.tobytes())
+
+    # ---------------- MJPEG (ESKİ YOL — kullanılmıyor) ----------------
     def _video(self):
         import cv2
         self.send_response(200)

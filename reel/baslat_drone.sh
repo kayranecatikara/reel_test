@@ -110,6 +110,28 @@ python3 -c "import cv2,numpy" 2>/dev/null || {
     kirmizi "  HATA: paketler eksik:  pip install -r requirements.txt"; exit 1; }
 
 if [ "$SAHTE_BACKEND" = "1" ]; then
+    # ⛔ ZATEN BİR BACKEND VARSA SAHTEYİ BAŞLATMA — SESSİZ KARIŞIKLIK OLUR.
+    #   YAŞANDI (2026-08-29): gerçek backend açık unutulmuştu; sahte sunucu
+    #   portu bağlayamayıp çıktı, panel GERÇEK backend'e bağlandı ve
+    #   gerçek drone'un telemetrisini gösterdi. Yarım saat "sahte veri niye
+    #   böyle" diye arandı — oysa veri gerçekti.
+    if python3 - <<'PY' 2>/dev/null
+import socket, sys
+try:
+    socket.create_connection(("127.0.0.1", 8766), timeout=1.0).close()
+except Exception:
+    sys.exit(1)
+PY
+    then
+        kirmizi "  ⛔ 8766'da ZATEN bir backend var — sahte sunucu BAŞLATILMADI."
+        echo   "     Panel O backend'e bağlanacak (muhtemelen GERÇEK donanım)."
+        echo   "     Gerçekten sahte sınama istiyorsan önce onu kapat:"
+        echo   "         ./reel/skydagger/baslat_backend.sh --kapat"
+        echo
+        SAHTE_BACKEND=0
+    fi
+fi
+if [ "$SAHTE_BACKEND" = "1" ]; then
     sari "  SAHTE BACKEND başlatılıyor (yalnız sınama — donanım YOK)"
     python3 araclar/sahte_skydagger.py &
     SAHTE_PID=$!
