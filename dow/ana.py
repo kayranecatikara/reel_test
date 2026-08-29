@@ -34,10 +34,27 @@ from dow.fusion.gnss_filtre import GNSSDuzeltici
 
 
 class Beyin:
-    def __init__(self, cfg=Ayar, dedektor=None):
+    def __init__(self, cfg=Ayar, dedektor=None, baglanti=None, cevirici=None):
         self.cfg = cfg
-        self.b = DowBaglanti()
-        self.cev = HizCubukCevirici()
+        # ⭐ ARAÇ DİKİŞİ (2026-08-28) — GERÇEK ORTAMA GEÇİŞ İÇİN TEK DEĞİŞİKLİK.
+        #   `Beyin` artık HANGİ ARACA bağlı olduğunu BİLMEZ; yalnız şu altı
+        #   çağrıyı yapar: canli() konum() yonelim() hiz_vektoru() komut()
+        #   ve (yalnız görsel temas YOKKEN) truth()/hedef_konum_bozuk().
+        #   Sözleşmenin tamamı: reel/reel/arayuz.py
+        #     sim    -> DowBaglanti()      (varsayılan; bu satır DEĞİŞMEDİ)
+        #     gerçek -> reel.gercek_baglanti.GercekBaglanti(...)
+        #   ⛔ DAVRANIŞ DEĞİŞMEZ: `baglanti=None` iken eskisiyle BİT BİT aynı.
+        #      Kanıt: araclar/denklik.py 400 tik + bekçi B72.
+        self.b = baglanti if baglanti is not None else DowBaglanti()
+        # ⭐ ÇEVİRİCİ DİKİŞİ (2026-08-29) — araç dikişinin kardeşi.
+        #   Çevirici, ARACIN MODELİDİR (bkz. cevirici.py başlığı): hangi
+        #   çubuk ne yapar. Gerçek araçta iki şey farklıdır ve ikisi de
+        #   burada verilir:
+        #     MODEL="aci"     -> Angle modunda çubuk AÇIYA eşlenir
+        #     dikey=DikeyDongu -> throttle bir İTKİ komutu olduğu için
+        #                         tırmanma hızını kapalı döngü üretir
+        #   ⛔ None iken DoW davranışı BİT BİT korunur (bekçi R48).
+        self.cev = cevirici if cevirici is not None else HizCubukCevirici()
         self.izleyici = GPS.HedefIzleyici()
         self.filtre = GNSSDuzeltici()        # KULLANICININ kodu — DEĞİŞTİRİLMEDİ
         self.det = dedektor                  # yalnız GORSEL_AKTIF iken
@@ -115,10 +132,28 @@ class Beyin:
 
     def hedef_konumu(self, t):
         """Seçili kaynağa göre hedef konumu (m) ya da None.
-        ⛔ YALNIZ görsel temas YOKKEN çağrılır."""
+        ⛔ YALNIZ görsel temas YOKKEN çağrılır.
+
+        ÜÇ KAYNAK VARDIR ve üçü FARKLI DÜNYALARA aittir:
+          "truth"  : DoW'un bozulmamış kanalı. GELİŞTİRME İÇİN. Gerçekte YOK.
+          "filtre" : DoW'un JAMMER'LI kanalı + `GNSSDuzeltici`. DoW'a özgü.
+          "gercek" : YARIŞMA SUNUCUSU (ya da denemede Talon bilgisayarı).
+                     ⛔ JAMMER FİLTRESİ UYGULANMAZ — ortada bozma yok.
+
+        ⚠ BU AYRIM UÇTAN UCA TESTLE ORTAYA ÇIKTI (2026-08-29, bekçi R47):
+          Gerçek bağlantıyla "filtre" kipinde koşulunca hedef HİÇ
+          üretilmedi (`hedef_var=0`, 1500 tik). Sebep: `GNSSDuzeltici`
+          DoW'un bozma modeline göre yazılmış; temiz veriyi bekletiyor.
+          Yani gerçekte hiç hedef görmeden uçacaktık — ve hata mesajı
+          da olmayacaktı.
+        """
         if self.cfg.GPS_KAYNAK == "truth":
             tr = self.b.truth()
             return tr["hedef_m"] if tr else None
+        if self.cfg.GPS_KAYNAK == "gercek":
+            # Sunucu verisi zaten temizdir; üstüne bozma-düzeltici koymak
+            # var olmayan bir gürültüyü "düzeltmek" demektir.
+            return self.b.hedef_konum_bozuk()
         hx, hy, hz = self.b.hedef_konum_bozuk()
         temiz = self.filtre.guncelle(hx * 100, hy * 100, hz * 100)
         if temiz is None:
@@ -599,9 +634,22 @@ class Beyin:
 
         # ---- ISTASYON ----
         if hp is None:
-            self.b.komut(self.cev._vz_cubuk(0.0), 0.0, 0.0, 0.0, True)
+            # ⛔ HEDEF YOKKEN "İRTİFANI KORU" DEMEK GEREKİR — ama bunun
+            #   çubuk karşılığı ARACA GÖRE DEĞİŞİR:
+            #     DoW    : throttle bir HIZ komutuydu -> statik eşleme
+            #              `_vz_cubuk(0)` = HOVER_THR = -0.586 doğruydu.
+            #     GERÇEK : Angle modunda -0.586 çubuk ~1244 µs, yani
+            #              rölanti civarı = ARAÇ DÜŞER.
+            #   ⚠ BU HATA UÇTAN UCA TESTTE GÖRÜLDÜ (R47): hedef gelmeyince
+            #     araç -0.586 komutuyla 42 m'den yere indi.
+            #   Dikey döngü takılıysa "vz=0" isteği ONA sorulur.
+            if self.cev.dikey is not None:
+                _thr = self.cev.dikey.hesapla(0.0, v_olculen[2], dt)
+            else:
+                _thr = self.cev._vz_cubuk(0.0)
+            self.b.komut(_thr, 0.0, 0.0, 0.0, True)
             self.tani["durum"] = "HEDEF_YOK"
-            return self.cev._vz_cubuk(0.0), 0.0, 0.0, 0.0
+            return _thr, 0.0, 0.0, 0.0
 
         (vx, vy), vz_ned, yaw_rate, ti = GPS.komut(
             dp, own_yaw, hp, hv, self.izleyici.yon_deg, self.cfg)

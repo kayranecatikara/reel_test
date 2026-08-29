@@ -31,15 +31,44 @@ TERİMLER (CLAUDE.md §0.2 — hiçbir terim tanımsız bırakılmaz):
 ================================================================================
 """
 import math
+import os
+
+
+def _f(ad, v):
+    return float(os.environ.get(ad, v))
+
+
+def _s(ad, v):
+    return os.environ.get(ad, v).strip().lower()
 
 
 class CevCfg:
-    """Çevirici ayarları. Her biri env ile geçersiz kılınabilir (kill-switch)."""
+    """Çevirici ayarları — yani ARACIN ÖLÇÜLMÜŞ MODELİ.
+
+    ⭐⭐ BU SINIF BİR GÜDÜM AYARI DEĞİL, BİR ARAÇ TARİFİDİR (2026-08-29).
+    Buradaki her sayı "hangi çubuk ne yapar" sorusunun O ARACA ait cevabıdır
+    ve ÖLÇÜLEREK bulunur. Bu yüzden gerçek donanıma geçerken değişmesi
+    GEREKEN yer burasıdır — güdüm yasalarının kendisi değil.
+    (Bekçi B11 bu dosyanın güdüm yasasını İTHAL ETMEDİĞİNİ sınar; bu
+     kural o kadar katıdır ki yasanın dosya adını YORUMDA anmak bile
+     testi kırar. Kasten öyle: yapısal ayrım, ancak korunursa vardır.)
+
+    Ayrım niye önemli (CLAUDE.md §0.2):
+      GÜDÜM YASASI  "hedefe göre saniyede kaç metre gitmeliyim" der.
+                    Bu, aracın ne olduğundan BAĞIMSIZ bir karardır.
+      ARAÇ MODELİ   "saniyede şu kadar metre gitmek için çubuğu nereye
+                    koymalıyım" der. Bu TAMAMEN araca bağlıdır.
+    Simden gerçeğe taşırken ikincisi yeniden ölçülür, birincisi DOKUNULMAZ.
+
+    Her alan `DOW_CEV_*` env değişkeniyle geçersiz kılınabilir; VARSAYILANLAR
+    DoW'da ölçülen değerlerdir, yani env verilmezse davranış BİT BİT eskisi
+    gibidir (bekçi R24 bunu sınar).
+    """
 
     # --- [1] EKSEN ---
     # Gazebo NED: X kuzey, Y doğu, Z AŞAĞI (vz>0 = alçal).
     # Unreal:     X ileri, Y sağ,  Z YUKARI (throttle>0 = tırman).
-    Z_ISARET = -1.0        # NED vz -> Unreal yukarı hızı
+    Z_ISARET = _f("DOW_CEV_Z_ISARET", -1.0)   # NED vz -> "yukarı" hızı
     # ⛔ YANAL EKSEN İŞARETİ — ÖLÇÜLDÜ, TAHMİN DEĞİL.
     #   Unreal SOL-ELLİ (X ileri, Y sağ, Z yukarı, yaw saat yönü); benim
     #   dunya_govde() dönüşümüm SAĞ-ELLİ varsayıyordu. Sonuç: yanal komut
@@ -49,14 +78,18 @@ class CevCfg:
     #   ÖLÇÜM (200 m'de, 3 s saf komut, gerçek yer değişimi):
     #     pitch +0.6 -> gövde ileri +66.6 m, gövde sağ  -0.0  ✅ doğru
     #     roll  +0.6 -> gövde ileri  +6.6 m, gövde sağ -66.8  ❌ TERS
-    Y_ISARET = -1.0        # ölçüldü: +roll aracı SOLA götürüyor
+    #   ⭐ GERÇEK ARAÇTA BU DEĞER MUHTEMELEN +1.0'DIR (standart uçak
+    #     sözleşmesi: +roll sağa yatırır, araç sağa gider). AMA "muhtemelen"
+    #     UÇURULMAZ: `reel/araclar/isaret_olc.py` ölçer, sonuç buraya
+    #     DOW_CEV_Y_ISARET ile verilir. Ölçülmeden otonom uçuş AÇILMAZ.
+    Y_ISARET = _f("DOW_CEV_Y_ISARET", -1.0)   # DoW'da ölçüldü: +roll SOLA
 
     # --- [2] YATAY İÇ DÖNGÜ ---
     # a_istenen = K_V * (v_hedef - v_olculen)
     # K_V birimi 1/s; zaman sabiti tau = 1/K_V.
     # Yatış tau'su 0.211 s. İç döngü ondan YAVAŞ olmalı, yoksa iki döngü
     # birbirini kovalar ve salınır. K_V=1.5 -> tau=0.67 s = 3.2 kat yavaş.
-    K_V = 1.5
+    K_V = _f("DOW_CEV_KV", 1.5)
 
     # --- [3] İVME -> ÇUBUK ---
     # İki aday model (hangisinin doğru olduğu G2 ölçümüyle belirlenecek):
@@ -64,9 +97,16 @@ class CevCfg:
     #   "dogru" : stick = a / A_MAX               (oyun doğrudan uyguluyorsa)
     # ⚠ Zarf ölçümü 60° yatışta 34-39 m/s² buldu; açı modeli 17.0 öngörür.
     #   Bu, "dogru" modelin daha olası olduğuna işaret eder — ama ÖLÇÜLECEK.
-    MODEL = "dogru"
-    A_MAX = 34.0           # m/s²; "dogru" modelde tam çubuğun ivmesi
-    MAX_YATIS_DEG = 60.0   # belge: tam çubukta ulaşılan açı
+    #   ⭐ GERÇEK ARAÇ İÇİN DOĞRU OLAN "aci"DİR (2026-08-29).
+    #     Angle modunda çubuk AÇIYA doğrusal eşlenir; yatay ivme ise
+    #     a = g·tan(açı) ile açıya DOĞRUSAL DEĞİL bağlıdır. "dogru" modeli
+    #     DoW için seçilmişti çünkü oyun fiziği gerçek dışıydı: 60° yatışta
+    #     34 m/s² veriyordu, fizik 17.0 der (TAM İKİ KAT).
+    #     Ölçülen kartta angle_limit = 60 -> gerçek tavan 17.0 m/s².
+    #     Geçiş: DOW_CEV_MODEL=aci  DOW_CEV_ACI_MAX=60
+    MODEL = _s("DOW_CEV_MODEL", "dogru")
+    A_MAX = _f("DOW_CEV_A_MAX", 34.0)      # m/s²; "dogru" modelde tam çubuk
+    MAX_YATIS_DEG = _f("DOW_CEV_ACI_MAX", 60.0)  # "aci" modelinde tam çubuk açısı
 
     # --- DİKEY: ÖLÇÜLMÜŞ MODEL (2026-08-21, kendi uçuşumuz, DoW V5.0.0) ---
     # throttle bir HIZ komutudur -> ivme kademesi YOK. Ama eşleme İKİ KOLLU ve
@@ -83,14 +123,14 @@ class CevCfg:
     # POZİTİF KOL : vz = 32.64*thr + 0.869      (thr > 0)
     # NEGATİF KOL : vz = 16.78*thr + 9.835      (thr <= HOVER_THR)
     # TAM SIFIR   : oyunun özel İRTİFA-TUTMA kipi (vz ~ +0.88, sürüklenme)
-    POZ_EGIM   = 32.64     # (m/s)/birim
-    POZ_KESIM  = 0.869     # m/s
-    NEG_EGIM   = 16.78     # (m/s)/birim
-    NEG_KESIM  = 9.835     # m/s
-    HOVER_THR  = -0.586    # vz=0 veren throttle (negatif kolun sıfır geçişi)
-    TUT_BANDI  = 0.05      # |vz_istenen| bunun altındaysa thr=0 (irtifa-tut kipi)
-    VZ_MAX_TIRMAN = 33.51  # m/s; ÖLÇÜLDÜ (belge 120 km/h = 33.33 ile uyumlu)
-    VZ_MAX_ALCAL  = 6.95   # m/s; ÖLÇÜLDÜ @thr=-1
+    POZ_EGIM   = _f("DOW_CEV_POZ_EGIM", 32.64)     # (m/s)/birim
+    POZ_KESIM  = _f("DOW_CEV_POZ_KESIM", 0.869)     # m/s
+    NEG_EGIM   = _f("DOW_CEV_NEG_EGIM", 16.78)     # (m/s)/birim
+    NEG_KESIM  = _f("DOW_CEV_NEG_KESIM", 9.835)     # m/s
+    HOVER_THR  = _f("DOW_CEV_HOVER_THR", -0.586)    # vz=0 veren throttle (negatif kolun sıfır geçişi)
+    TUT_BANDI  = _f("DOW_CEV_TUT_BANDI", 0.05)      # |vz_istenen| bunun altındaysa thr=0 (irtifa-tut kipi)
+    VZ_MAX_TIRMAN = _f("DOW_CEV_VZ_MAX_TIRMAN", 33.51)  # m/s; ÖLÇÜLDÜ (belge 120 km/h = 33.33 ile uyumlu)
+    VZ_MAX_ALCAL  = _f("DOW_CEV_VZ_MAX_ALCAL", 6.95)   # m/s; ÖLÇÜLDÜ @thr=-1
     # ⚠ BELGE YANLIŞ: README "-1 = serbest düşüş" diyor; serbest düşüş 5 s'de
     #   -49 m/s verirdi, ÖLÇÜLEN -6.95. Belge bu maddede güvenilmez.
     # ⚠ ASİMETRİ 4.8 KAT: tırmanma 33.5, alçalma 6.95. Tek VZ_MAX kullanmak
@@ -99,13 +139,13 @@ class CevCfg:
     # --- YAW ---
     # Araç 214 °/s yapabiliyor AMA hızlı yaw görüntüyü bulandırıp dedektörü
     # kırar. Gazebo'daki 120 °/s sınırı KORUNUYOR (bilinçli tercih).
-    YAW_RATE_MAX_DEG = 120.0
+    YAW_RATE_MAX_DEG = _f("DOW_CEV_YAW_MAX", 120.0)
 
     # --- ÇUBUK EĞİM SINIRI ---
     # Komut/tik en çok bu kadar değişir. Araç yatışı zaten 0.211 s ile
     # yumuşuyor; bu sınır ONDAN GEVŞEK olmalı, yoksa iki sönümleme üst üste
     # binip tepkiyi geciktirir. 50 Hz'de 0.15 -> tam çubuk 0.13 s'de.
-    MAX_DELTA = 0.15
+    MAX_DELTA = _f("DOW_CEV_MAX_DELTA", 0.15)
 
 
 def _kirp(x, lo=-1.0, hi=1.0):
@@ -128,9 +168,17 @@ class HizCubukCevirici:
             yaw_rate_hedef_deg=...)        # °/s
     """
 
-    def __init__(self, cfg=CevCfg):
+    def __init__(self, cfg=CevCfg, dikey=None):
         self.cfg = cfg
         self._onceki = {"thr": 0.0, "pitch": 0.0, "roll": 0.0, "yaw": 0.0}
+        # ⭐ DİKEY DİKİŞİ (2026-08-29) — gerçek araç için.
+        #   None  -> `_vz_cubuk()` kullanılır: DoW'da ÖLÇÜLMÜŞ statik eşleme.
+        #            (throttle orada gerçekten bir HIZ komutuydu.)
+        #   nesne -> `dikey.hesapla(...)` kullanılır: KAPALI DÖNGÜ.
+        #            Gerçek araçta Angle modunda throttle bir İTKİ komutudur;
+        #            statik eşleme TANIMSIZDIR. Ayrıntı: reel/gercek/dikey.py
+        #   ⛔ None iken tek satır kod yolu değişmez (bekçi R34, denklik.py).
+        self.dikey = dikey
         # teşhis: mekanizma kapısı (§5.1) için loglanır
         self.tani = {}
 
@@ -180,7 +228,10 @@ class HizCubukCevirici:
 
     # ---------------- ana ----------------
     def cevir(self, v_hedef_ned, v_olculen_unreal, yaw_rad,
-              yaw_rate_hedef_deg=0.0):
+              yaw_rate_hedef_deg=0.0, dt=None, olcum_yasi=0.0):
+        """`dt` ve `olcum_yasi` YALNIZ kapalı dikey döngü için gerekir.
+
+        Verilmezlerse (sim yolu) hiçbir şey değişmez — bekçi R34."""
         c = self.cfg
         vx_h, vy_h, vz_h_ned = v_hedef_ned
         vx_o, vy_o, vz_o     = v_olculen_unreal
@@ -197,9 +248,24 @@ class HizCubukCevirici:
         pitch_ham = self._ivme_cubuk(a_ileri)
         roll_ham  = self._ivme_cubuk(a_sag)
 
-        # --- DİKEY: ölçülmüş iki kollu ters model (yukarıdaki tabloya bak) ---
-        vz_yukari = c.Z_ISARET * vz_h_ned          # NED aşağı -> Unreal yukarı
-        thr_ham = self._vz_cubuk(vz_yukari)
+        # --- DİKEY ---
+        vz_yukari = c.Z_ISARET * vz_h_ned          # NED aşağı -> "yukarı"
+        if self.dikey is None:
+            # SİM YOLU: ölçülmüş iki kollu ters model (yukarıdaki tabloya bak)
+            thr_ham = self._vz_cubuk(vz_yukari)
+        else:
+            # GERÇEK YOL: kapalı döngü. ÖLÇÜLEN düşey hızı da ister.
+            # ⚠ Eğim telafisi KOMUT EDİLEN yatıştan hesaplanır, ölçülenden
+            #   değil: Angle modunda araç komutu ~0.2 s'de takip eder, yani
+            #   komut ölçümün İLERİSİNDEDİR ve ileri besleme için doğru
+            #   olan odur (bozucuyu beklemeden telafi etmek).
+            import math as _m
+            _aci = _m.radians(c.MAX_YATIS_DEG)
+            cosy = (_m.cos(pitch_ham * _aci) * _m.cos(roll_ham * _aci)
+                    if c.MODEL == "aci" else 1.0)
+            thr_ham = self.dikey.hesapla(
+                vz_yukari, vz_o, dt if dt else 0.02,
+                cos_yatis=cosy, olcum_yasi=olcum_yasi)
 
         # --- YAW ---
         yaw_ham = _kirp(yaw_rate_hedef_deg / c.YAW_RATE_MAX_DEG)
@@ -221,4 +287,6 @@ class HizCubukCevirici:
             "cev_doyum": int(abs(pitch_ham) >= 1.0 or abs(roll_ham) >= 1.0
                              or abs(thr_ham) >= 1.0),
         }
+        if self.dikey is not None:
+            self.tani.update(self.dikey.tani)
         return thr, pitch, roll, yaw

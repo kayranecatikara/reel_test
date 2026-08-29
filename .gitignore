@@ -30,3 +30,8 @@ gizli*
 # TensorRT motorlari — GPU/surucu/TRT surumune OZEL, TASINMAZ (her makinede uretilir)
 *.engine
 *.onnx
+
+# Skydagger — komitenin ikili dosyasi ve turevi depoya KONMAZ.
+# `reel/skydagger/kur.sh` onu .exe'den her makinede yeniden cikarir.
+reel/skydagger/backend.pyc
+reel/skydagger/py312/

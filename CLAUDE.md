@@ -661,3 +661,159 @@ bunu sınar).
 
 Ayrıntılı arka plan: `docs/OTONOM_UCUS_TESTI.md`,
 `.claude/skills/ucus-testi/SKILL.md`, sonuç kaydı `UYGULANACAK.md`.
+
+---
+
+# 11 · GERÇEK ORTAM — iki bilgisayarlı yer kontrol sistemi
+
+*(2026-08-29'da kuruldu. Tam kullanım kılavuzu: `reel/README.md`.)*
+
+## 11.1 · Mimari — ne nerede koşuyor
+
+```
+ BİLGİSAYAR 1 — TALON                    BİLGİSAYAR 2 — DRONE
+ Pixhawk ─SiK─> talon/yayinci.py         ELRS ─CRSF─> drone_yki.py
+                  ├─ udp:14550 ─> talon_arayuz     kumanda ─USB─>  │
+                  └─ udp:47800 ──────────────────> hedef GPS 5 Hz  │
+                                                   kamera ─USB─>   │
+                                                   panel :8810 ────┘
+```
+
+**Başlatma sırası — DEĞİŞMEZ:**
+1. `reel/baslat_talon.sh <seri-port> <drone-ip>` ⛔ ÖNCE bu (seri portu tek
+   süreç açabilir; yayıncı portu açıp `udp:14550`'ye aynalar)
+2. `MAV_ENDPOINT=udp:127.0.0.1:14550 ./baslat.sh udp:127.0.0.1:14550` (talon_arayuz)
+3. `reel/baslat_drone.sh <seri-port>` → panel `http://127.0.0.1:8810`
+
+Donanımsız deneme: her ikisine de `--sahte`.
+
+## 11.2 · ⛔ ÜSTÜN KURAL — GÜDÜM YASASI DEĞİŞMEZ
+
+`dow/gudum/*` (ibvs, gps, kilit) ve simde ölçülmüş davranış **DOKUNULMAZ**.
+Gerçek donanıma geçiş, yasayı değil **ARAÇ MODELİNİ** değiştirir.
+
+| katman | ne söyler | araca bağlı mı |
+|---|---|---|
+| GÜDÜM YASASI | "saniyede kaç metre gitmeliyim" | ❌ hayır |
+| ARAÇ MODELİ (`cevirici.py`, `reel/gercek/dikey.py`) | "bunun için çubuk nerede olmalı" | ✅ tamamen |
+
+**Dört dikiş açıldı, dördü de bit bit denklikle kanıtlandı** (400 tik,
+`araclar/denklik.py`, bekçi R9/R34/R48):
+
+```python
+Beyin(baglanti=..., cevirici=...)      # ana.py — iki parametre, varsayılan None
+HizCubukCevirici(dikey=...)            # cevirici.py — dikey kapalı döngü
+CevCfg.*                               # 16 araç sabiti DOW_CEV_* env ile
+Ayar.GPS_KAYNAK = "gercek"             # truth/filtre GERÇEKTE YOK
+```
+
+⛔ **Yeni bir dikiş açarken kural:** varsayılan `None`, ve `araclar/denklik.py`
+ile 400 tikte bit bit aynı olduğunu KANITLA. Kanıtlanmadan girmez.
+
+## 11.3 · Gerçek araç sabitleri — ölçüldü / ölçülecek
+
+```bash
+export DOW_CEV_MODEL=aci        # ✅ Angle modunda çubuk AÇIYA eşlenir
+export DOW_CEV_ACI_MAX=60       # ✅ Betaflight angle_limit = 60
+export DOW_GPS_KAYNAK=gercek    # ✅ sunucudan/Talon'dan, jammer filtresi YOK
+export DOW_CEV_Y_ISARET=?       # ⛔ ÖLÇÜLMEDİ — otonom AÇILMAZ
+```
+
+⛔ **`Y_ISARET` ölçülmeden otonom açma.** Roll çubuğunun aracı hangi yöne
+götürdüğünü söyler. Yanlışsa güdüm hatayı **büyütür** (DoW'da yaşandı:
+tiklerin %94'ü doyumda, kapanma −3.78 m/s = uzaklaşıyor).
+
+⚠ **DoW fiziği gerçeğin 2 katıydı:** 60° yatışta 34 m/s² veriyordu; fizik
+`a = g·tan(60°)` = 17.0 der. Gerçek araç **yarı çevik**. Sim kazanımları
+birebir taşınmaz.
+
+## 11.4 · ⛔ EMNİYET — `reel/gercek/komut.py` (HAKEM)
+
+Otonom için **DÖRT ŞART BİRDEN**; biri düşerse anında MANUELE düşer:
+panel OTONOM ister **+** pilot izin verir **+** güdüm taze (<200 ms)
+**+** kumandayla bağ taze (<3 s).
+
+| kural | nasıl uygulanıyor | bekçi |
+|---|---|---|
+| Güdüm **arm edemez** | `OtonomIstek`te arm alanı YOK, `otonom_yaz()` arm almaz | R35 |
+| **Disarm asla** emniyet tedbiri değil | 8 arıza yolunda arm zorlanmıyor | R40 |
+| Pilot **son sözü söyler** | veto anahtarı, o tikte düşürür | R36, R41 |
+| Kumanda 3 s kopuk → **paket kesilir** | AUTO-LAND devreye girer | R39 |
+| Panel bayat → çubuklar YOK sayılır | 0.5 s eşiği | R54 |
+| Yalnız **Angle** | ALTHOLD/POSHOLD kanalları 1500 µs (eşik 1700) | — |
+
+⛔ **"Paket kesmek" doğru davranıştır.** Nötr göndermek aracı süzülerek
+uzaklaştırır; disarm göndermek DÜŞÜRÜR. Susmak, alıcı failsafe'ini
+tetikler → `failsafe_procedure = AUTO-LAND`.
+
+## 11.5 · Dikey kanal — Angle modunda kapalı döngü
+
+Şartname yalnız Angle moduna izin veriyor; orada throttle bir **itki**
+komutudur, hız komutu değil. Bu yüzden tırmanma hızını biz kapatıyoruz
+(`reel/gercek/dikey.py`). Kazançlar tezgâhta **ölçülerek** seçildi
+(`reel/araclar/dikey_sim.py`), ve tezgâh üç kez ön kabulümü çürüttü:
+
+- τ=2.0 s seçimim yanlıştı (aşımı gecikme değil **tümlev** üretiyor) → **τ=1.0, KP=0.051**
+- "kazanç ×3" taraması fiziksel değildi (36:1 itki/ağırlık) → doğru değişken **T/W**
+- pil düşüşü "kaçıyor" görünüyordu → **dış döngü** onu 0.13 m ötelemeye çeviriyor
+
+⛔ **Telemetri hızı < 4 Hz ise otonom dikey döngü AÇILMAZ** (`TELEM_MIN_HZ`).
+Ölçülen kararlılık zarfının sınır hücresine hiç girmemek için.
+
+## 11.6 · Yarışma sunucusu
+
+- Telemetri **1-2 Hz** — ⛔ 2 Hz üstü **400 + hata kodu 3** ile cezalandırılır;
+  sınır kodda (`min(2.0, ...)`, bekçi R51).
+- `mod` alanı **hakemin gerçekte ne yaptığını** söyler, panelde ne seçili
+  olduğunu değil (bekçi R53).
+- Talon yayıncısı **sunucunun yanıt biçiminde** yayınlar → yarışma günü ilk
+  kez denenen kod yolu KALMAZ (bekçi R55).
+
+## 11.9 · Skydagger backend — Linux'ta DOĞAL çalışır (Wine YOK)
+
+*(2026-08-29'da çözüldü.)* Komite `skydagger-backend.exe` veriyor ama bu bir
+**PyInstaller ile paketlenmiş Python 3.12** uygulamasıdır ve kodunun içinde
+`/dev/ttyUSB0`, `/dev/ttyACM0` desteği YAZILIDIR. Tek harici bağımlılığı
+`pyserial`.
+
+```bash
+./reel/skydagger/kur.sh              # bir kez: py3.12 + pyserial + çıkarım
+./reel/skydagger/baslat_backend.sh   # her açılışta
+```
+
+⛔ **WINE DENENDİ VE OLMADI — tekrar denemeyin:**
+  * Ubuntu wine 6.0.3 → `unimplemented function propsys.dll.VariantToString`
+  * GE-Proton11-5 wine → `GLIBC_2.38 not found` (sistemde 2.35; DoW bu yüzden
+    umu-launcher konteynerinden koşuyor)
+
+⛔ **TTY ŞART.** Backend `readline` kullanıyor; boruya bağlanınca konsol hiç
+açılmaz ve **HİÇ ÇIKTI VERMEZ** — hata da vermez. `baslat_backend.sh`
+`script -qfec` ile sarmalıyor. (§9'daki MAVProxy tuzağının aynısı.)
+
+⛔ **KOMİTENİN KODU DEĞİŞTİRİLMEZ.** `cikar.py` yalnız çıkarır, `yukleyici.py`
+yalnız `marshal.loads` + `exec` yapar. Bytecode'a dokunulmaz.
+
+**Doğrulandı (2026-08-29):**
+```
+connected /dev/ttyUSB0 @ 115200
+{"connected": true, "port": "/dev/ttyUSB0", "baud": 115200, "mode": "off"}
+```
+
+## 11.7 · Açık borçlar — kapanmadan otonom uçulmaz
+
+| # | ne | neden kritik |
+|---|---|---|
+| 1 | **`Y_ISARET` ölçümü** | yanlışsa araç hedeften kaçar |
+| 2 | **Kamera kalibrasyonu** (`F_PX`, `TILT`, `MENZIL_C`) | menzil kutu boyutundan çıkıyor; sabitler DoW'a ait |
+| 3 | **Dedektör yeniden eğitimi** | `talon_v3.pt` **oyun ekran görüntüleriyle** eğitildi |
+| 4 | **Telemetri hızı ölçümü** | dikey döngünün işletme kapısı |
+| 5 | **Asılı gaz** | sarsıntısız devir bunu pilotun çubuğundan alıyor — sahada doğrula |
+
+## 11.8 · Bekçiler
+
+```bash
+python3 -m pytest tests/test_dow.py reel/tests/test_reel.py -q
+```
+`tests/test_dow.py` (B1..B71) sim davranışını, `reel/tests/test_reel.py`
+(R1..R55) gerçek ortam katmanını korur. **İkisi de yeşil olmadan commit yok.**
+
