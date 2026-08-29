@@ -49,6 +49,28 @@ export DOW_GPS_KAYNAK=gercek      # truth/filtre GERÇEKTE YOK
 export DOW_CEV_Y_ISARET="${DOW_CEV_Y_ISARET:-+1.0}"
 export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-0}"
 
+# ---- KUMANDA EKSEN HARİTASI (JUMPER-RC / RadioMaster Pocket, 7 eksen) ----
+# ⛔ ÖLÇÜLDÜ, VARSAYILMADI (araclar/kumanda_kalib.py, 2026-08-29).
+#   Kumanda 7 eksen bildiriyor; kodun varsayılanı 8 eksenli AETR içindi.
+#   KESİN ölçülenler:
+#     eksen 2 = GAZ   (dinlenmede -0.53, tam yukarıda +0.77 -> ortalanMIYOR)
+#     eksen 3 = YAW   (dinlenmede -0.02)
+#     eksen 4 = ARM   (anahtar; -1.00 -> +0.96)
+#   ⚠ ROLL/PITCH ilk ölçümde KİRLENDİ: gaz çubuğu ortalanmadığı için
+#     takılı kalan farkı sonraki adımları bastırdı (araç düzeltildi).
+#     Aşağıdaki 0/1 değerleri EdgeTX'in standart sırasından geliyor ve
+#     DOĞRULANMALI:  python3 reel/araclar/kumanda_kalib.py
+export DOW_KMD_EKS_ROLL="${DOW_KMD_EKS_ROLL:-0}"     # ⚠ doğrulanacak
+export DOW_KMD_EKS_PITCH="${DOW_KMD_EKS_PITCH:-1}"   # ⚠ doğrulanacak
+export DOW_KMD_EKS_THR="${DOW_KMD_EKS_THR:-2}"       # ✔ ölçüldü
+export DOW_KMD_EKS_YAW="${DOW_KMD_EKS_YAW:-3}"       # ✔ ölçüldü
+export DOW_KMD_EKS_ARM="${DOW_KMD_EKS_ARM:-4}"       # ✔ ölçüldü
+# ⛔ OTONOM İZİN ANAHTARI ATANMAMIŞ (kullanıcı: "aux 2 hiçbir şeye atılı
+#   değildi"). -1 = anahtar yok -> izin PANELDEN gelir. Kumandada boş bir
+#   anahtarı AUX2'ye atarsan burayı o eksenin numarasıyla değiştir; pilot
+#   o zaman otonomu tek hareketle veto edebilir.
+export DOW_KMD_EKS_KIP="${DOW_KMD_EKS_KIP:--1}"
+
 EK=()
 SAHTE_BACKEND=0
 for x in "$@"; do

@@ -269,7 +269,11 @@ class KomutSureci:
             #   ⚠ "İzin" olarak kurgulandı, "kip seçimi" olarak değil:
             #     anahtar AÇIK iken otonom OTOMATİK başlamaz — panel de
             #     istemelidir. İki taraf da evet demeden otonom olmaz.
-            self._veto_izin = bool(cubuk.kip_anahtari)
+            # ⛔ None = "kumandanın izin konusunda fikri yok" (anahtar
+            #   atanmamış). Önceki değer KORUNUR; böylece panelin verdiği
+            #   izin kumandanın sabit -1.00'ıyla EZİLMEZ.
+            if cubuk.kip_anahtari is not None:
+                self._veto_izin = bool(cubuk.kip_anahtari)
         kmd_kopuk = (simdi - self._son_kmd_t) > c.KMD_ASIM_S
         # ⛔⛔ TESLİM SÜRESİ — R39 BUNU EKSİK BULDU (2026-08-29).
         #   İlk yazdığımda `KMD_TESLIM_S` denetimi yalnız BİR dalda vardı ve

@@ -79,51 +79,57 @@ def rehberli():
     print("\n  ⛔ PERVANELER SÖKÜLÜ olsun. Drone kapalı olabilir; bu test")
     print("     yalnız kumandanın USB çıktısını okur, RF'e hiçbir şey gitmez.\n")
 
-    def dinlen():
-        """Çubuklar bırakılmış hâldeki değerleri (referans)."""
-        input("  Bütün çubukları BIRAK ve Enter'a bas… ")
+    def olc(n_ornek=15):
         ort = [0.0] * n
-        for _ in range(20):
+        for _ in range(n_ornek):
             v = _oku(pygame, j)
             for i in range(n):
-                ort[i] += v[i] / 20.0
+                ort[i] += v[i] / n_ornek
             time.sleep(0.02)
         return ort
 
-    taban = dinlen()
-    print("     dinlenme: " + " ".join("%+.2f" % x for x in taban) + "\n")
+    print("  ⛔ TABAN HER ADIMDA YENİDEN ALINIR — ve bu bir tasarım kararıdır:")
+    print("     GAZ çubuğu kendiliğinden ORTALANMAZ. Yukarı ittikten sonra")
+    print("     orada kalır; tek bir başlangıç tabanıyla kıyaslarsak o kalıcı")
+    print("     fark SONRAKİ BÜTÜN ölçümleri bastırır ve her eksen 'gaz'")
+    print("     gibi görünür. (İlk sürümde tam bu oldu: pitch ve roll da")
+    print("     eksen 2 çıktı.) Bu yüzden her adım İKİ AŞAMALIDIR:")
+    print("       (a) çubuklar duruyor  -> taban ölç")
+    print("       (b) SADECE isteneni oynat ve TUT -> tekrar ölç\n")
 
     sonuc = {}
     ADIMLAR = [
-        ("THROTTLE", "GAZ çubuğunu (sol dikey) TAM YUKARI it ve TUT", +1),
-        ("PITCH", "SAĞ çubuğu TAM İLERİ (yukarı) it ve TUT", +1),
-        ("ROLL", "SAĞ çubuğu TAM SAĞA it ve TUT", +1),
-        ("YAW", "SOL çubuğu TAM SAĞA it ve TUT", +1),
-        ("ARM", "ARM anahtarını (AUX1) AÇIK konuma al", +1),
-        ("KIP", "OTONOM İZİN anahtarını (AUX2) AÇIK konuma al", +1),
+        ("THROTTLE", "GAZ çubuğunu (sol dikey) TAM YUKARI it"),
+        ("PITCH", "SAĞ çubuğu TAM İLERİ (yukarı) it"),
+        ("ROLL", "SAĞ çubuğu TAM SAĞA it"),
+        ("YAW", "SOL çubuğu TAM SAĞA it"),
+        ("ARM", "ARM anahtarını (AUX1) çevir"),
+        ("KIP", "OTONOM İZİN anahtarını çevir  (yoksa boş Enter = ATLA)"),
     ]
-    for ad, yonerge, _ in ADIMLAR:
-        input("  ▸ %-52s → Enter " % yonerge)
-        ort = [0.0] * n
-        for _ in range(15):
-            v = _oku(pygame, j)
-            for i in range(n):
-                ort[i] += v[i] / 15.0
-            time.sleep(0.02)
-        fark = [ort[i] - taban[i] for i in range(n)]
+    for ad, yonerge in ADIMLAR:
+        c = input("  ▸ %-46s  [Enter=başla, a=atla] " % ad)
+        if c.strip().lower() == "a":
+            print("     atlandı")
+            continue
+        taban = olc()                      # (a) O ANKİ hâl
+        input("     %-52s → Enter " % (yonerge + ", TUT"))
+        hedef = olc()                      # (b) oynatılmış hâl
+        fark = [hedef[i] - taban[i] for i in range(n)]
         eks = max(range(n), key=lambda i: abs(fark[i]))
         buyuk = abs(fark[eks])
         if buyuk < 0.15:
             print("     ⚠ hiçbir eksen anlamlı oynamadı (en çok %.2f) — atlandı"
                   % buyuk)
             continue
-        # ikinci büyük ile arasında net fark var mı
-        ikinci = sorted((abs(f) for f in fark), reverse=True)[1] if n > 1 else 0
+        ikinci = sorted((abs(f) for f in fark), reverse=True)[1] if n > 1 else 0.0
         net = "" if buyuk > 2.5 * max(ikinci, 1e-6) else "  ⚠ BELİRSİZ"
         ters = fark[eks] < 0
         sonuc[ad] = (eks, ters)
-        print("     eksen %d  değişim %+.2f%s%s"
-              % (eks, fark[eks], "  (TERS)" if ters else "", net))
+        print("     eksen %d  değişim %+.2f%s%s   (ikinci en büyük %.2f)"
+              % (eks, fark[eks], "  (TERS)" if ters else "", net, ikinci))
+        if net:
+            print("        → iki eksen birden oynadı. Yalnız isteneni oynat.")
+        input("     çubuğu BIRAK / anahtarı geri al, sonra Enter ")
 
     print("\n" + "=" * 70)
     print("  SONUÇ — bu satırları `reel/baslat_drone.sh` içine ekle")
@@ -136,8 +142,10 @@ def rehberli():
     kullanilan = {}
     print()
     for ad, (eks, ters) in sonuc.items():
-        print("export DOW_KMD_EKS_%-6s=%d" % (ADI[ad], eks))
+        print("export DOW_KMD_EKS_%s=%d" % (ADI[ad], eks))
         kullanilan.setdefault(eks, []).append(ad)
+    if "KIP" not in sonuc:
+        print("export DOW_KMD_EKS_KIP=-1      # anahtar YOK -> izin PANELDEN")
     for ad, (eks, ters) in sonuc.items():
         if ters and ad in ("THROTTLE", "PITCH", "ROLL", "YAW"):
             print("export DOW_KMD_TERS_%-5s=1" % ADI[ad])

@@ -1969,3 +1969,56 @@ def test_R66_ana_program_kumanda_nesnesini_ATMIYOR():
             "drone_yki.py kumanda nesnesini None yapıyor — sıcak takma "
             "çalışmaz, sonradan takılan kumanda asla bulunmaz")
     assert any("Kumanda" in a for a in atamalar)
+
+
+# ---------------------------------------------------------------- R67
+def test_R67_izin_anahtari_YOKSA_otonomu_BLOKE_ETMIYOR():
+    """⛔ Kumandada otonom-izin anahtarı ATANMAMIŞSA (kullanıcının durumu:
+    "aux 2 hiçbir şeye atılı değildi") o eksen sabit -1.00 okunur.
+
+    Eski davranış: `kip_anahtari=False` -> veto DAİMA kapalı -> otonom
+    HİÇ açılamaz, ve sebebi de görünmez. Panelde OTONOM'a basarsın,
+    hiçbir şey olmaz.
+
+    Yeni: EKSEN_KIP=-1 iken kumanda "fikrim yok" (None) der ve izin
+    PANELDEN gelir.
+    """
+    from gercek.kumanda import KumandaCfg
+
+    # (a) izin anahtarı yokken kumanda None döndürmeli
+    class _Kfg(KumandaCfg):
+        EKSEN_KIP = -1
+    from gercek.kumanda import Kumanda
+    k = Kumanda(_Kfg)
+    k.hazir = True
+    k.n_eksen = 7
+
+    class _J:
+        def get_axis(self, i): return -1.0
+    class _P:
+        class event:
+            @staticmethod
+            def pump(): pass
+    k._js = _J(); k._pg = _P()
+    assert k.oku().kip_anahtari is None, (
+        "EKSEN_KIP=-1 iken kumanda 'fikrim yok' (None) demeli")
+
+    # (b) hakem: None gelince PANELİN izni korunmalı
+    sp, bag, km, ks = _duzenek(arm=True, kip_anahtari=None)
+    ks.kip_sec("OTONOM")
+    t = 4000.0
+    ks.panel_yaz(-0.3, 0, 0, 0, arm=True, otonom_izin=True, t=t)
+    ks.otonom_yaz(0.2, 0, 0, 0, t=t)
+    ok, d = ks.tik(simdi=t)
+    assert d["kaynak"] == "OTONOM", (
+        "panel izin verdi ama kumandanın atanmamış anahtarı otonomu BLOKE "
+        "etti — sebep: %s" % d["sebep"])
+
+    # (c) anahtar VARSA (None değil) pilot hâlâ veto edebilmeli
+    km.c.kip_anahtari = False
+    km.c.roll = 0.5                     # kumanda oynadı -> hâkim olur
+    ks.panel_yaz(-0.3, 0, 0, 0, arm=True, otonom_izin=True, t=t + 0.1)
+    ks.otonom_yaz(0.2, 0, 0, 0, t=t + 0.1)
+    ok, d = ks.tik(simdi=t + 0.1)
+    assert d["sebep"] == "pilot_vetosu", (
+        "anahtar atanmışken pilot vetosu çalışmalı, sebep: %s" % d["sebep"])

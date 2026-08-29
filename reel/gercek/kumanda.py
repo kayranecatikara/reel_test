@@ -31,6 +31,11 @@ class KumandaCfg:
     EKSEN_THROTTLE = int(os.environ.get("DOW_KMD_EKS_THR", 2))
     EKSEN_YAW      = int(os.environ.get("DOW_KMD_EKS_YAW", 3))
     EKSEN_ARM      = int(os.environ.get("DOW_KMD_EKS_ARM", 4))      # AUX1/SA
+    #: OTONOM İZİN anahtarı. ⛔ -1 = ANAHTAR YOK.
+    #:   Kumandada boş bir anahtar yoksa bu eksen sabit -1.00 okunur ve
+    #:   veto DAİMA kapalı kalır — otonom hiç açılamaz, sebebi de görünmez.
+    #:   -1 verilince kumanda "izin konusunda fikrim yok" der (None) ve
+    #:   izin PANELDEN gelir. Bekçi R67.
     EKSEN_KIP      = int(os.environ.get("DOW_KMD_EKS_KIP", 5))      # AUX2/SB
     #: İşaret düzeltmeleri (HID ekseni ters gelebilir) — ÖLÇÜLECEK
     TERS_ROLL     = os.environ.get("DOW_KMD_TERS_ROLL", "0") == "1"
@@ -156,7 +161,8 @@ class Kumanda:
             roll=self._eksen(ham, c.EKSEN_ROLL, c.TERS_ROLL),
             yaw=self._eksen(ham, c.EKSEN_YAW, c.TERS_YAW),
             arm=self._eksen(ham, c.EKSEN_ARM) >= c.ANAHTAR_ESIK,
-            kip_anahtari=self._eksen(ham, c.EKSEN_KIP) >= c.ANAHTAR_ESIK,
+            kip_anahtari=(None if c.EKSEN_KIP < 0
+                          else self._eksen(ham, c.EKSEN_KIP) >= c.ANAHTAR_ESIK),
             t=time.monotonic(), ham=ham)
         self.son = s
         return s
