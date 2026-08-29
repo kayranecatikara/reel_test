@@ -52,8 +52,19 @@ def _arg():
     a.add_argument("--hedef", default="255.255.255.255",
                    help="drone bilgisayarının IP'si (varsayılan: yayın)")
     a.add_argument("--hedef-port", type=int, default=47800)
-    a.add_argument("--ayna", default="udpout:127.0.0.1:14550",
-                   help="talon_arayuz'un bağlanacağı UDP (boş = ayna yok)")
+    # ⭐ İKİ AYNA ÇIKIŞI — vendorlanan arayüzün KENDİ tasarımı bunu bekliyor:
+    #   "UDP köprüsü varsa sorun yok: panel köprünün bir çıkışına (14552),
+    #    alt süreç başka bir porta (14550) bağlanır; köprü ikisini de besler."
+    #   (gcs/sunucu.py, satır ~1905)
+    # ⛔ NİYE ŞART: arayüz uçuş-öncesi kontrolü ve senaryo koşucusunu ALT
+    #   SÜREÇ olarak çalıştırıyor. Tek çıkış olsaydı ikisi AYNI UDP portuna
+    #   bağlanırdı ve çekirdek her datagramı yalnız BİRİNE verirdi — ikisi de
+    #   yarı kör kalırdı. Arayüzün kendi belgesi bu arızayı 18 Ağu 2026'da
+    #   yaşadıklarını yazıyor.
+    a.add_argument("--ayna", default="udpout:127.0.0.1:14552",
+                   help="ARAYÜZÜN bağlanacağı UDP (boş = ayna yok)")
+    a.add_argument("--ayna2", default="udpout:127.0.0.1:14550",
+                   help="arayüzün ALT SÜREÇLERİNİN bağlanacağı UDP")
     a.add_argument("--hz", type=float, default=5.0)
     a.add_argument("--takim", type=int,
                    default=int(os.environ.get("DOW_TAKIM_NO", 0)))
@@ -162,15 +173,19 @@ def main():
         except Exception as e:
             print("⛔ bağlanılamadı: %s" % e)
             return 2
-        ayna = None
-        if a.ayna:
+        aynalar = []
+        for etiket, adres in (("arayüz (GCS_ENDPOINT)", a.ayna),
+                              ("alt süreç (MAV_ENDPOINT)", a.ayna2)):
+            if not adres:
+                continue
             try:
-                ayna = mavutil.mavlink_connection(a.ayna, input=False)
-                print("  AYNA      : %s  ->  talon_arayuz buraya bağlanır" % a.ayna)
-                print("              MAV_ENDPOINT=udp:127.0.0.1:14550 ./baslat.sh")
+                aynalar.append(mavutil.mavlink_connection(adres, input=False))
+                print("  AYNA      : %-24s -> %s" % (adres, etiket))
             except Exception as e:
-                print("  AYNA      : ⛔ açılamadı (%s) — yalnız yayın yapılacak" % e)
-        threading.Thread(target=_mavlink_dongu, args=(y, m, ayna),
+                print("  AYNA      : ⛔ %s açılamadı (%s)" % (adres, e))
+        if not aynalar:
+            print("  AYNA      : ⚠ hiç ayna yok — arayüz araca ULAŞAMAZ")
+        threading.Thread(target=_mavlink_dongu, args=(y, m, aynalar),
                          daemon=True).start()
 
     print("  YAYIN     : udp://%s:%d" % (a.hedef, a.hedef_port))
@@ -201,15 +216,22 @@ def main():
     return 0
 
 
-def _mavlink_dongu(y, m, ayna):
-    """MAVLink'i oku, hedefi çıkar, aynaya geçir; aynadan geleni araca yolla."""
-    ev = {"alt": None}
+def _mavlink_dongu(y, m, aynalar):
+    """MAVLink'i oku, hedefi çıkar, aynalara geçir; aynadan geleni araca yolla.
+
+    ⛔ ÇİFT YÖNLÜ: arayüzün gönderdiği komutlar (arm, mod, GÖREV YÜKLEME)
+       bu yoldan araca gider. Tek yönlü bir ayna, arayüzü kör bir gösterge
+       paneline çevirirdi — görev yükleyemezdi.
+    """
+    if not isinstance(aynalar, (list, tuple)):
+        aynalar = [aynalar] if aynalar is not None else []
     while True:
         msg = m.recv_match(blocking=True, timeout=1.0)
         if msg is None:
             continue
         y.n_mavlink += 1
-        if ayna is not None:
+        # araçtan gelen HER paketi BÜTÜN aynalara geçir
+        for ayna in aynalar:
             try:
                 ayna.write(msg.get_msgbuf())
             except Exception:
@@ -225,11 +247,13 @@ def _mavlink_dongu(y, m, ayna):
         elif tip == "VFR_HUD" and y.durum["enlem"] is not None:
             with y._kilit:
                 y.durum["hiz"] = float(msg.groundspeed)
-        # aynadan (arayüzden) gelen komutları araca geçir
-        if ayna is not None:
+        # aynadan (arayüzden / alt süreçten) gelen komutları ARACA geçir
+        for ayna in aynalar:
             try:
-                g = ayna.recv_match(blocking=False)
-                if g is not None:
+                for _ in range(8):          # bir tikte birikmiş komutları boşalt
+                    g = ayna.recv_match(blocking=False)
+                    if g is None:
+                        break
                     m.write(g.get_msgbuf())
             except Exception:
                 pass

@@ -1,0 +1,6 @@
+pymavlink>=2.4.37
+flask>=2.0
+# Seri port (SiK telsizi COM3 gibi bir porttan bağlanır). pymavlink bunu
+# kendiliğinden kurmuyor; eksik olduğunda panel açılıyor ama araca HİÇ
+# bağlanamıyor ve sebebi görünmüyor.
+pyserial>=3.5

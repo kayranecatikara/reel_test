@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0f14">
+<title>Talon Yer Kontrol</title>
+<!--
+  Talon yer kontrol arayüzü — tek dosya, SIFIR BAĞIMLILIK.
+
+  Sahada internet olmayabilir, bu yüzden hiçbir CDN, font veya harita servisi
+  kullanılamaz. 3B panel de bu yüzden bir kütüphane değil, canvas üzerine
+  yazılmış ~200 satırlık kendi izdüşümümüz.
+-->
+<style>
+:root{
+  --zemin:#0b0f14; --kart:#131b24; --kart2:#1a242f;
+  --cizgi:#243342; --yazi:#e6edf3; --soluk:#8b9cad;
+  --mavi:#4aa3ff; --yesil:#46e07a; --sari:#ffd24a;
+  --turuncu:#ff9f43; --kirmizi:#ff4d4d;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--zemin);color:var(--yazi);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overscroll-behavior:none}
+body{padding-bottom:env(safe-area-inset-bottom)}
+
+/* ---------- durum şeridi ---------- */
+/* Şerit KAYDIRILMAZ, SARAR. Telefonda 8 hücre yan yana sığmıyor; kaydırmalı
+   şeritte sağdaki hücreler (hız, görev) hiç görünmüyordu ve sahada kimse
+   durum çubuğunu yana kaydırmayı akıl etmez. */
+#serit{position:sticky;top:0;z-index:30;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(74px,1fr));
+  background:var(--kart);border-bottom:1px solid var(--cizgi);padding:6px 4px}
+.hucre{padding:3px 4px;border-right:1px solid var(--cizgi);text-align:center}
+.hucre:last-child{border-right:none}
+.hucre .et{display:block;font-size:9.5px;letter-spacing:.09em;
+  color:var(--soluk);text-transform:uppercase}
+.hucre .dg{display:block;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.iyi{color:var(--yesil)} .uyari{color:var(--turuncu)} .kotu{color:var(--kirmizi)}
+.pasif{color:var(--soluk)}
+
+/* ---------- 3B panel ---------- */
+#panel3d{position:relative;width:100%;height:46vh;min-height:260px;
+  background:linear-gradient(#0d141c,#080b10);border-bottom:1px solid var(--cizgi);
+  touch-action:none;overflow:hidden}
+#c3d{display:block;width:100%;height:100%}
+#ufuk{position:absolute;top:8px;right:8px;width:82px;height:82px;
+  border-radius:50%;border:2px solid var(--cizgi);background:#0a0e13}
+#mesafeKutu{position:absolute;left:8px;bottom:8px;background:#0e151dcc;
+  border:1px solid var(--cizgi);border-radius:8px;padding:6px 9px;
+  font-size:12px;line-height:1.5;font-variant-numeric:tabular-nums;
+  backdrop-filter:blur(3px)}
+#mesafeKutu.tehlike{border-color:var(--kirmizi);background:#2a0e0ecc}
+#ipucu{position:absolute;left:8px;top:8px;font-size:10.5px;color:#5d6d7e;
+  pointer-events:none}
+#sigdir{position:absolute;right:8px;bottom:8px;background:#0e151dcc;
+  border:1px solid var(--cizgi);color:var(--yazi);border-radius:8px;
+  padding:7px 11px;font-size:12px}
+
+/* ---------- ortak ---------- */
+section{border-bottom:1px solid var(--cizgi);padding:12px}
+h2{margin:0 0 9px;font-size:10.5px;letter-spacing:.12em;color:var(--soluk);
+  text-transform:uppercase;font-weight:600}
+button{font:inherit;color:var(--yazi);background:var(--kart2);
+  border:1px solid var(--cizgi);border-radius:10px;padding:12px 10px;
+  cursor:pointer;min-height:46px}
+button:active{transform:translateY(1px)}
+button:disabled{opacity:.38;cursor:not-allowed}
+.satir{display:flex;gap:8px}
+.satir>*{flex:1}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.sec{background:var(--mavi);border-color:var(--mavi);color:#04121f;font-weight:700}
+
+#manuelAc{width:100%;padding:19px;font-size:17px;font-weight:700;
+  letter-spacing:.1em;background:linear-gradient(180deg,#1d3a57,#152b41);
+  border-color:#2f5f8c}
+
+/* ---------- şekil ---------- */
+.alanlar{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));
+  gap:8px;margin:9px 0}
+/* Açılır listeler iki sütun kaplasın — tek sütunda metin kırpılıyordu
+   ("Kalkış nokta…", "Eve dön (RT…"). */
+label.alan.genis{grid-column:span 2}
+label.alan{display:block;font-size:10.5px;color:var(--soluk);
+  letter-spacing:.06em;text-transform:uppercase}
+label.alan input,label.alan select{width:100%;margin-top:3px;padding:9px 8px;
+  font:inherit;font-variant-numeric:tabular-nums;background:var(--kart2);
+  color:var(--yazi);border:1px solid var(--cizgi);border-radius:8px}
+#uyarilar{margin-top:9px;display:flex;flex-direction:column;gap:6px}
+.uy{padding:8px 10px;border-radius:8px;font-size:13px;border-left:3px solid}
+.uy.engel{background:#2a0e0e;border-color:var(--kirmizi);color:#ffc9c9}
+.uy.uyari{background:#2a220e;border-color:var(--turuncu);color:#ffe2bd}
+.uy.bilgi{background:#0e1f2a;border-color:var(--mavi);color:#c9e6ff}
+/* İniş seçili buton: şekil seçimindeki mavi .sec ile KARIŞMASIN diye turuncu.
+   3B paneldeki iniş izi de aynı turuncu — pilot butondaki rengi ekrandaki
+   yolla eşleştirebilsin. */
+.sec.inis{background:var(--turuncu);border-color:var(--turuncu);color:#2a1500}
+#bInis,#mInis{background:#2f1a06;border-color:var(--turuncu);
+  color:var(--turuncu);font-weight:700}
+/* Alan grubu üstündeki ikinci seviye başlık — h2 kadar baskın değil. */
+.et2{margin:11px 0 6px;font-size:10px;letter-spacing:.11em;
+  color:var(--soluk);text-transform:uppercase}
+.alt{margin-top:7px;font-size:12px;color:var(--soluk);line-height:1.5}
+/* İniş hazırlık listesi — her satır tek bir şart. Renk taşıyıcı bilgi
+   DEĞİL: ✓/✗ işareti de var, sahada güneşte renk ayırt edilemeyebilir. */
+.hz{display:flex;align-items:flex-start;gap:8px;padding:6px 0;
+  border-bottom:1px solid var(--cizgi);font-size:13px}
+.hz:last-child{border-bottom:none}
+.hz .im{flex:0 0 16px;font-weight:700;line-height:1.4}
+.hz .ad{flex:0 0 108px;color:var(--soluk);font-size:12px}
+.hz .dg{flex:1 1 auto;font-variant-numeric:tabular-nums}
+.hz .nt{flex:1 0 100%;margin-left:24px;font-size:11.5px;color:var(--soluk);
+  line-height:1.45}
+.hz.ok .im{color:var(--yesil)}
+.hz.uyari .im{color:var(--turuncu)}
+.hz.engel .im{color:var(--kirmizi)}
+.hz.bekliyor .im,.hz.bilinmiyor .im{color:var(--soluk)}
+#olcumler{margin-top:8px;font-size:12px;color:var(--soluk);
+  font-variant-numeric:tabular-nums}
+#gorevDurum{margin-top:9px;font-size:13px}
+
+/* ---------- mesajlar ---------- */
+#mesajlar{max-height:190px;overflow-y:auto;font-size:12.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.msj{padding:4px 0;border-bottom:1px solid #1a2430;display:flex;gap:8px}
+.msj .t{color:#566675;flex:0 0 auto}
+.msj.sev0,.msj.sev1,.msj.sev2,.msj.sev3{color:var(--kirmizi)}
+.msj.sev4{color:var(--turuncu)}
+.msj.sev5,.msj.sev6{color:var(--yazi)}
+.msj.sev7{color:var(--soluk)}
+
+/* ---------- manuel katman ---------- */
+#manuelKatman{position:fixed;inset:0;z-index:50;background:var(--zemin);
+  display:none;flex-direction:column;touch-action:none}
+#manuelKatman.acik{display:flex}
+#mUst{display:flex;gap:8px;align-items:center;padding:10px;
+  border-bottom:1px solid var(--cizgi);background:var(--kart)}
+#mUst button{flex:0 0 auto;padding:11px 15px;min-height:44px}
+#olucu{flex:1;text-align:center;font-size:12px;color:var(--soluk);
+  font-variant-numeric:tabular-nums}
+#olucu.kopuk{color:var(--kirmizi);font-weight:700}
+/* Telsiz link sağlığı — yalnızca SiK bağlıyken görünür (RADIO_STATUS gelirse).
+   USB/UDP bağlantıda bu mesaj hiç gelmez ve şerit gizli kalır. */
+#mLink{display:none;gap:6px 16px;flex-wrap:wrap;padding:7px 12px;
+  font-size:11.5px;color:var(--soluk);background:var(--kart2);
+  border-bottom:1px solid var(--cizgi);font-variant-numeric:tabular-nums}
+#mLink.acik{display:flex}
+#mLink b{font-weight:600;color:var(--yazi)}
+#mLink b.uyari{color:var(--turuncu)} #mLink b.kotu{color:var(--kirmizi)}
+#mOrta{flex:1;display:flex;gap:14px;padding:14px;min-height:0;align-items:stretch}
+#pad{flex:1;position:relative;background:var(--kart);border:1px solid var(--cizgi);
+  border-radius:16px;touch-action:none;overflow:hidden}
+#padCanvas{display:block;width:100%;height:100%}
+#gazKutu{flex:0 0 96px;display:flex;flex-direction:column;align-items:center;
+  gap:8px;background:var(--kart);border:1px solid var(--cizgi);
+  border-radius:16px;padding:12px 6px}
+#gazDeger{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:var(--yesil)}
+#gazSarmal{flex:1;width:100%;position:relative;display:flex;
+  align-items:center;justify-content:center}
+/* Dikey slider: writing-mode tarayıcılar arasında tutarsız, rotate güvenli. */
+#gaz{position:absolute;transform:rotate(-90deg);transform-origin:center;
+  -webkit-appearance:none;appearance:none;background:transparent;height:34px}
+#gaz::-webkit-slider-runnable-track{height:16px;border-radius:8px;
+  background:linear-gradient(90deg,#1a242f,#2d6b45)}
+#gaz::-moz-range-track{height:16px;border-radius:8px;
+  background:linear-gradient(90deg,#1a242f,#2d6b45)}
+#gaz::-webkit-slider-thumb{-webkit-appearance:none;width:34px;height:34px;
+  border-radius:50%;background:var(--yesil);border:3px solid #0b0f14;
+  margin-top:-9px}
+#gaz::-moz-range-thumb{width:34px;height:34px;border-radius:50%;
+  background:var(--yesil);border:3px solid #0b0f14}
+#mAlt{padding:10px;display:flex;flex-direction:column;gap:10px;
+  border-top:1px solid var(--cizgi);background:var(--kart)}
+#mRtl{width:100%;padding:16px;font-size:16px;font-weight:700;
+  background:#3a2a0a;border-color:var(--sari);color:var(--sari)}
+/* Acil DISARM ayrı satırda, diğer butonlardan uzakta ve farklı renkte:
+   yanlışlıkla basılması havada motorun kesilmesi demek. */
+#mAcil,#anaAcil{width:100%;padding:18px;font-size:15px;font-weight:800;
+  letter-spacing:.08em;background:#3d0c0c;border:2px solid var(--kirmizi);
+  color:#ff9a9a;margin-top:6px}
+#mAcil:active,#anaAcil:active{background:var(--kirmizi);color:#fff}
+/* Ana sayfadaki kopya: sayfanın EN ALTINDA, diğer bölümlerden boşlukla
+   ayrılmış. Manuel katmandaki ile aynı korumayı sürdürüyor. */
+#acilBolum{margin-top:28px;border-color:var(--kirmizi)}
+/* Ana sayfadaki ARM/DISARM. ARM'ın kenarlığı yeşil DEĞİL: yeşil "güvenli"
+   çağrıştırır, oysa ARM tehlikeli yön. Sarı = dikkat. */
+#anaArm{border-color:var(--sari);color:var(--sari);font-weight:700}
+#anaDisarm{border-color:var(--soluk)}
+.notu{font-size:11px;color:var(--soluk);text-align:center}
+#cikti{white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;
+  font-size:11.5px;background:#0a0e13;border:1px solid var(--cizgi);
+  border-radius:8px;padding:9px;margin-top:9px;max-height:240px;
+  overflow:auto;display:none}
+</style>
+</head>
+<body>
+
+<div id="serit"></div>
+
+<div id="panel3d">
+  <canvas id="c3d"></canvas>
+  <canvas id="ufuk" width="164" height="164"></canvas>
+  <div id="ipucu">sürükle: döndür · iki parmak / tekerlek: yakınlaş</div>
+  <div id="mesafeKutu">eve <b id="dEv">—</b> · irtifa <b id="dIrt">—</b></div>
+  <button id="sigdir">sığdır</button>
+</div>
+
+<section>
+  <button id="manuelAc">M A N U E L &nbsp; K O N T R O L</button>
+</section>
+
+<section>
+  <h2>Şekil çiz — GPS görevi</h2>
+  <div class="grid3" id="sekilSec">
+    <button data-sekil="kare" class="sec">KARE</button>
+    <button data-sekil="daire">DAİRE</button>
+    <button data-sekil="elips">ELİPS</button>
+  </div>
+
+  <div class="alanlar">
+    <label class="alan"><span id="etOlcu">Kenar (m)</span>
+      <input id="fOlcu" type="number" value="250" min="20" max="900" step="10"></label>
+    <label class="alan" id="kutuOlcu2" style="display:none">Kısa eksen (m)
+      <input id="fOlcu2" type="number" value="110" min="20" max="900" step="10"></label>
+    <label class="alan">İrtifa (m)
+      <input id="fIrtifa" type="number" value="60" min="30" max="200" step="5"></label>
+    <label class="alan">Tur (0=∞)
+      <input id="fTur" type="number" value="3" min="0" max="255" step="1"></label>
+    <label class="alan">Yön (°)
+      <input id="fYon" type="number" value="0" min="0" max="359" step="5"></label>
+    <label class="alan genis">Merkez
+      <select id="fMerkez">
+        <option value="ev">Kalkış noktası</option>
+        <option value="ucak">Uçağın şu anki yeri</option>
+      </select></label>
+    <label class="alan genis" id="kutuInisYon" style="display:none">İniş yönü (°)
+      <input id="fInisYon" type="number" value="0" min="0" max="359" step="5"></label>
+  </div>
+
+  <div class="et2">Görev bitince</div>
+  <div class="grid3" id="bitinceSec">
+    <button data-bitince="rtl" class="sec">EVE DÖN</button>
+    <button data-bitince="bekle">BEKLE</button>
+    <button data-bitince="inis">OTOMATİK İN</button>
+  </div>
+
+  <div id="olcumler"></div>
+  <div id="uyarilar"></div>
+
+  <div class="satir" style="margin-top:10px">
+    <button id="bYukle">GÖREVİ YÜKLE</button>
+    <button id="bBaslat" disabled>BAŞLAT</button>
+  </div>
+  <div class="satir" style="margin-top:8px">
+    <button id="bGorevDur">GÖREVİ DURDUR</button>
+    <button id="bGorevSil">GÖREVİ SİL</button>
+  </div>
+  <div id="gorevDurum"></div>
+</section>
+
+<section>
+  <h2>Uçuş modu</h2>
+  <div class="grid4" id="modSec">
+    <button data-mod="manual">MANUAL</button>
+    <button data-mod="stabilize">STAB</button>
+    <button data-mod="fbwa">FBWA</button>
+    <button data-mod="loiter">LOITER</button>
+  </div>
+  <div class="satir" style="margin-top:8px">
+    <button id="bAutotune">AUTOTUNE — KAPALI</button>
+  </div>
+  <div id="autotuneNot" class="alt" style="margin-top:4px">
+    Modu değiştirmez, görevi kesmez. Açıkken çubukları SERT oynatın —
+    yumuşak hareketten öğrenmez. İnişten önce KAPATIN.
+  </div>
+</section>
+
+<section>
+  <h2>Otomatik iniş — hazır mı</h2>
+  <div id="inisHazir"></div>
+  <div id="inisOlcum" class="alt"></div>
+</section>
+
+<section>
+  <div class="satir">
+    <button id="anaArm">ARM</button>
+    <button id="anaDisarm">DISARM</button>
+  </div>
+  <div id="anaArmNot" class="alt">durum —</div>
+  <div class="satir" style="margin-top:8px">
+    <button id="bPreflight">UÇUŞ ÖNCESİ KONTROL</button>
+    <button id="bEve" style="background:#3a2a0a;border-color:var(--sari);
+      color:var(--sari);font-weight:700">RTL — EVE DÖN</button>
+  </div>
+  <div class="satir" style="margin-top:8px">
+    <button id="bInis">🛬 ŞİMDİ İN — KALKIŞ YERİNE</button>
+  </div>
+  <div id="inisNot" class="alt"></div>
+  <pre id="cikti"></pre>
+</section>
+
+<section>
+  <h2>Otopilot mesajları</h2>
+  <div id="mesajlar"></div>
+</section>
+
+<section id="acilBolum">
+  <h2>Acil</h2>
+  <button id="anaAcil">⚠ ACİL — MOTORU DURDUR (DISARM) ⚠</button>
+  <div class="notu" id="anaAcilNot" style="margin-top:7px;line-height:1.5">
+    Yalnızca motor <b>hemen</b> dursun gerektiğinde: yerde kontrolsüz gaz,
+    pervane tehlikesi, havada yangın/kırık.<br>
+    <b>Kontrolü geri almak için değil</b> — uçak kaçıyorsa mod knob'unu RTL'e,
+    inmesi gerekiyorsa SwD'yi aşağı alın.
+  </div>
+</section>
+
+<!-- ================= MANUEL KONTROL KATMANI ================= -->
+<div id="manuelKatman">
+  <div id="mUst">
+    <button id="mArm">ARM</button>
+    <button id="mDisarm">DISARM</button>
+    <div id="olucu">bağlantı —</div>
+    <button id="mKapat">KAPAT ✕</button>
+  </div>
+
+  <div id="mLink"></div>
+
+  <div id="mOrta">
+    <div id="pad"><canvas id="padCanvas"></canvas></div>
+    <div id="gazKutu">
+      <div style="font-size:10.5px;letter-spacing:.1em;color:var(--soluk)">GAZ</div>
+      <div id="gazDeger">0</div>
+      <div id="gazSarmal"><input id="gaz" type="range" min="0" max="100" value="0"></div>
+      <button id="gazSifir" style="padding:8px 6px;font-size:11px;min-height:36px;
+        width:100%">SIFIRLA</button>
+    </div>
+  </div>
+
+  <div id="mAlt">
+    <div class="notu" id="mNot">Joystick kapalı — pada dokunun</div>
+    <button id="mRtl">RTL — EVE DÖN</button>
+      <button id="mInis" style="width:100%;padding:14px;font-size:15px;
+        margin-top:8px">🛬 ŞİMDİ İN — KALKIŞ YERİNE</button>
+    <button id="mAcil">⚠ ACİL — MOTORU DURDUR (DISARM) ⚠</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   Yardımcılar
+   ========================================================================= */
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+async function post(yol, govde){
+  const r = await fetch(yol, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(govde || {})
+  });
+  try { return await r.json(); } catch(e){ return {ok:false, hata:"sunucu yanıtı okunamadı"}; }
+}
+async function get(yol){
+  const r = await fetch(yol);
+  return await r.json();
+}
+
+let T = {};              // son telemetri
+let ESIK = {};           // araçtan okunan eşikler
+
+/* =========================================================================
+   Durum şeridi
+   ========================================================================= */
+function hucre(etiket, deger, sinif){
+  return `<div class="hucre"><span class="et">${etiket}</span>
+          <span class="dg ${sinif||""}">${deger}</span></div>`;
+}
+
+function seritCiz(){
+  const bagli = T.bagli;
+  const armli = T.armli;
+  const fix = T.gps_fix ?? 0;
+  const yuzde = T.batarya_yuzde;
+  const volt = T.voltaj;
+
+  // Batarya rengi araçtan okunan eşiklere göre — sabit sayı gömmüyoruz ki
+  // kartta BATT_LOW_VOLT değişince gösterge onunla ayrışmasın.
+  let batSinif = "pasif", batMetin = "—";
+  if (volt != null && volt > 1){
+    batMetin = volt.toFixed(1) + "V" + (yuzde != null ? ` ·%${yuzde}` : "");
+    const kritik = ESIK.BATT_CRT_VOLT, dusuk = ESIK.BATT_LOW_VOLT;
+    batSinif = "iyi";
+    if (dusuk && volt <= dusuk) batSinif = "uyari";
+    if (kritik && volt <= kritik) batSinif = "kotu";
+  }
+
+  const g = T.gorev || {};
+  let gorevMetin = "yok", gorevSinif = "pasif";
+  if (g.oge_sayisi){
+    gorevMetin = (g.sekil || "?").toUpperCase();
+    gorevSinif = "iyi";
+    if (g.aktif_seq != null) gorevMetin += ` #${g.aktif_seq}`;
+  }
+
+  $("#serit").innerHTML =
+    hucre("bağlantı", bagli ? "BAĞLI" : "YOK", bagli ? "iyi" : "kotu") +
+    hucre("arm", armli == null ? "—" : (armli ? "ARMLI" : "disarm"),
+          armli == null ? "pasif" : (armli ? "kotu" : "iyi")) +
+    hucre("mod", T.mod || "—", T.mod ? "" : "pasif") +
+    hucre("batarya", batMetin, batSinif) +
+    hucre("gps", fix >= 3 ? `3D·${T.uydu ?? 0}` : `fix ${fix}`,
+          fix >= 3 ? ((T.uydu ?? 0) >= 8 ? "iyi" : "uyari") : "kotu") +
+    hucre("irtifa", T.irtifa != null ? Math.round(T.irtifa)+"m" : "—") +
+    hucre("hız", T.hiz != null ? T.hiz.toFixed(1)+" m/s" : "—") +
+    // Uçağın kendi gaz yüzdesi. Sıfırdan büyükse turuncu — motorun komut
+    // aldığı yerde bakışın oraya gitmesi için.
+    hucre("gaz", T.gaz_yuzde != null ? "%"+Math.round(T.gaz_yuzde) : "—",
+          T.gaz_yuzde == null ? "pasif" : (T.gaz_yuzde > 5 ? "uyari" : "")) +
+    hucre("görev", gorevMetin, gorevSinif);
+}
+
+/* =========================================================================
+   Mesafe / irtifa uyarısı
+   ========================================================================= */
+function inisHazirCiz(){
+  const h = T.inis_hazirlik;
+  const el = $("#inisHazir"), ol = $("#inisOlcum");
+  if (!h){ el.innerHTML = ""; ol.textContent = ""; return; }
+
+  // İşaret ve renk BİRLİKTE taşınıyor: sahada güneş altında telefon ekranında
+  // renk ayırt edilemeyebilir, işaret her koşulda okunur.
+  const IM = { ok:"✓", uyari:"!", engel:"✗", bekliyor:"…", bilinmiyor:"•" };
+  el.innerHTML = (h.satirlar || []).map(r => {
+    const sev = r.seviye || "bilinmiyor";
+    return `<div class="hz ${sev}"><span class="im">${IM[sev] || "•"}</span>`
+         + `<span class="ad">${r.ad}</span><span class="dg">${r.deger}</span>`
+         + (r.not ? `<span class="nt">${r.not}</span>` : "") + `</div>`;
+  }).join("");
+
+  const o = h.olcumler;
+  ol.textContent = o
+    ? `yaklaşma ${Math.round(o.mesafe)} m / ${Math.round(o.yaklasma_irtifa)} m`
+      + ` · alçalma dairesi ${Math.round(o.daire)} m`
+      + ` · süzülme ${o.suzulme}° (nominal ${o.suzulme_nominal}°)`
+    : "";
+
+  // ŞİMDİ İN butonunu çit/açı engeli varken kapat. Komutu göndermek uçağı
+  // çitin dışına yollar, çit RTL'i tetikler ve iniş yarıda kalır — buton
+  // basılabilir dursa pilot bunu ancak havada öğrenir.
+  for (const sec of ["#bInis", "#mInis"]){
+    const b = $(sec);
+    if (!b) continue;
+    b.disabled = !!h.engel;
+    b.title = h.engel ? "İniş paterni güvenlik çemberine sığmıyor" : "";
+  }
+}
+
+function mesafeKutuCiz(){
+  const kutu = $("#mesafeKutu");
+  let d = null;
+  if (T.lat != null && T.ev_lat != null) d = mesafeM(T.ev_lat, T.ev_lon, T.lat, T.lon);
+  $("#dEv").textContent = d == null ? "—" : Math.round(d) + " m";
+  $("#dIrt").textContent = T.irtifa == null ? "—" : Math.round(T.irtifa) + " m";
+
+  // Sınırlar araçtan: FENCE_RADIUS / FENCE_ALT_MAX. Aşılırsa uçak
+  // kendiliğinden RTL'e geçer (FENCE_ACTION=1), o yüzden erken uyarmak önemli.
+  const fr = ESIK.FENCE_RADIUS, fa = ESIK.FENCE_ALT_MAX, pay = ESIK.FENCE_MARGIN ?? 20;
+  let tehlike = false;
+  if (fr && d != null && d > fr - pay) tehlike = true;
+  if (fa && T.irtifa != null && T.irtifa > fa - pay) tehlike = true;
+  kutu.classList.toggle("tehlike", tehlike);
+}
+
+function mesafeM(lat1, lon1, lat2, lon2){
+  const M = 111319.49;
+  const k = (lat2 - lat1) * M;
+  const dg = (lon2 - lon1) * M * Math.cos(lat1 * Math.PI/180);
+  return Math.hypot(dg, k);
+}
+
+/* =========================================================================
+   3B GPS paneli
+   -------------------------------------------------------------------------
+   Kütüphane yok. Yerel ENU metre (doğu, kuzey, yukarı) → yörünge kamerası →
+   perspektif izdüşüm. Referans noktası kalkış yeri (yoksa uçağın ilk konumu).
+   ========================================================================= */
+const c3d = $("#c3d"), g3 = c3d.getContext("2d");
+let kam = { az: -0.6, el: 0.62, uzak: 700 };   // azimut, yükseliş, uzaklık
+let iz = [];                 // uçuş izi (ENU nokta dizisi)
+let planIz = [];             // planlanan şeklin noktaları (ENU)
+let inisIz = [];             // iniş paterni (ENU) — şekilden AYRI tutuluyor,
+                             // birleştirilse şeklin son köşesi ile yaklaşma
+                             // noktası arasında var olmayan bir kenar çizilirdi
+let ref = null;              // {lat, lon} — ENU orijini
+
+function enu(lat, lon, irtifa){
+  if (!ref) return null;
+  const M = 111319.49;
+  return {
+    x: (lon - ref.lon) * M * Math.cos(ref.lat * Math.PI/180),
+    y: (lat - ref.lat) * M,
+    z: irtifa || 0
+  };
+}
+
+function boyutlandir(){
+  const o = c3d.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  c3d.width = Math.round(o.width * dpr);
+  c3d.height = Math.round(o.height * dpr);
+  g3.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", () => { boyutlandir(); ciz3d(); });
+
+function proje(p){
+  const W = c3d.width / (window.devicePixelRatio > 2 ? 2 : (window.devicePixelRatio||1));
+  const H = c3d.height / (window.devicePixelRatio > 2 ? 2 : (window.devicePixelRatio||1));
+  const ca = Math.cos(kam.az), sa = Math.sin(kam.az);
+  let x = p.x*ca - p.y*sa;
+  let y = p.x*sa + p.y*ca;
+  const ce = Math.cos(kam.el), se = Math.sin(kam.el);
+  const y2 = y*ce - p.z*se;
+  const z2 = y*se + p.z*ce;
+  const d = y2 + kam.uzak;
+  if (d < 12) return null;                 // kameranın arkası
+  const f = (Math.min(W,H) * 0.78) / d;
+  return { sx: W/2 + x*f, sy: H/2 - z2*f, d };
+}
+
+function cizgi(a, b, renk, kalin, kesik){
+  const pa = proje(a), pb = proje(b);
+  if (!pa || !pb) return;
+  g3.beginPath();
+  g3.setLineDash(kesik || []);
+  g3.strokeStyle = renk; g3.lineWidth = kalin || 1;
+  g3.moveTo(pa.sx, pa.sy); g3.lineTo(pb.sx, pb.sy); g3.stroke();
+  g3.setLineDash([]);
+}
+
+function izgara(){
+  // Sahneyi kapsayacak kadar ızgara; adım sahne büyüklüğüne göre seçilir ki
+  // yakınlaşınca çizgi kalabalığı olmasın.
+  const menzil = Math.max(200, kam.uzak * 0.55);
+  let adim = 50;
+  while (menzil / adim > 14) adim *= 2;
+  const n = Math.ceil(menzil / adim);
+  for (let i = -n; i <= n; i++){
+    const v = i * adim;
+    const ana = (i === 0);
+    const renk = ana ? "#2f4459" : "#1a2733";
+    cizgi({x:-n*adim, y:v, z:0}, {x:n*adim, y:v, z:0}, renk, ana?1.4:1);
+    cizgi({x:v, y:-n*adim, z:0}, {x:v, y:n*adim, z:0}, renk, ana?1.4:1);
+  }
+}
+
+function evIsareti(){
+  const p = proje({x:0,y:0,z:0});
+  if (!p) return;
+  g3.fillStyle = "#ffd24a";
+  g3.beginPath(); g3.arc(p.sx, p.sy, 5, 0, 7); g3.fill();
+  g3.strokeStyle = "#ffd24a"; g3.lineWidth = 1.4;
+  g3.beginPath(); g3.arc(p.sx, p.sy, 10, 0, 7); g3.stroke();
+  g3.fillStyle = "#ffd24a"; g3.font = "11px system-ui";
+  g3.fillText("kalkış", p.sx + 13, p.sy + 4);
+}
+
+function inisCiz(){
+  if (inisIz.length < 2) return;
+  // KAPALI DEĞİL: iniş bir döngü değil, alçalma dairesinden yere inen tek
+  // yönlü bir yol. Bu yüzden şekilden farklı olarak son nokta ilkine bağlanmaz.
+  for (let i = 0; i < inisIz.length - 1; i++){
+    cizgi(inisIz[i], inisIz[i+1], "#ff9f43", 2, [5,4]);
+    cizgi({x:inisIz[i].x, y:inisIz[i].y, z:0},
+          {x:inisIz[i+1].x, y:inisIz[i+1].y, z:0}, "#4a3018", 1);
+  }
+  const p = proje(inisIz[inisIz.length-1]);      // iniş noktası = kalkış yeri
+  if (p){
+    g3.strokeStyle = "#ff9f43"; g3.lineWidth = 2;
+    g3.beginPath(); g3.arc(p.sx, p.sy, 7, 0, 7); g3.stroke();
+  }
+}
+
+function planCiz(){
+  if (planIz.length < 2) return;
+  for (let i = 0; i < planIz.length; i++){
+    const a = planIz[i], b = planIz[(i+1) % planIz.length];
+    cizgi(a, b, "#4aa3ff", 2, [7,5]);                        // şekil
+    cizgi({x:a.x,y:a.y,z:0}, {x:b.x,y:b.y,z:0}, "#1d3b56", 1); // yer gölgesi
+  }
+  // Köşe noktaları
+  g3.fillStyle = "#4aa3ff";
+  for (const a of planIz){
+    const p = proje(a);
+    if (p) { g3.beginPath(); g3.arc(p.sx, p.sy, 2.5, 0, 7); g3.fill(); }
+  }
+}
+
+function izCiz(){
+  for (let i = 1; i < iz.length; i++){
+    // İrtifaya göre renk: alçak sarı → yüksek yeşil. Uçağın yükseldiğini
+    // 3B izdüşümde gözle ayırt etmek zor, renk bunu telafi ediyor.
+    const h = clamp((iz[i].z || 0) / 120, 0, 1);
+    const r = Math.round(255 - 190*h), gg = Math.round(210 + 14*h), b = Math.round(74 + 48*h);
+    cizgi(iz[i-1], iz[i], `rgb(${r},${gg},${b})`, 2);
+  }
+}
+
+function ucakCiz(){
+  if (T.lat == null || !ref) return;
+  const p3 = enu(T.lat, T.lon, T.irtifa || 0);
+  const p = proje(p3);
+  if (!p) return;
+
+  // Yere dik çizgi — irtifa hissini veren asıl şey bu.
+  const yer = proje({x:p3.x, y:p3.y, z:0});
+  if (yer){
+    g3.beginPath(); g3.setLineDash([3,4]);
+    g3.strokeStyle = "#3d5a72"; g3.lineWidth = 1;
+    g3.moveTo(p.sx, p.sy); g3.lineTo(yer.sx, yer.sy); g3.stroke();
+    g3.setLineDash([]);
+    g3.fillStyle = "#243342";
+    g3.beginPath(); g3.ellipse(yer.sx, yer.sy, 5, 2.4, 0, 0, 7); g3.fill();
+  }
+
+  // Burun yönünü gösteren üçgen. Ekrandaki yön kamera azimutuna göre döner.
+  const yon = ((T.yon != null ? T.yon : (T.yaw || 0)) * Math.PI/180) + kam.az;
+  const bx = Math.sin(yon), by = -Math.cos(yon);
+  const s = 11;
+  g3.fillStyle = "#46e07a";
+  g3.beginPath();
+  g3.moveTo(p.sx + bx*s, p.sy + by*s);
+  g3.lineTo(p.sx - bx*s*0.55 - by*s*0.5, p.sy - by*s*0.55 + bx*s*0.5);
+  g3.lineTo(p.sx - bx*s*0.55 + by*s*0.5, p.sy - by*s*0.55 - bx*s*0.5);
+  g3.closePath(); g3.fill();
+}
+
+function ciz3d(){
+  const dpr = window.devicePixelRatio > 2 ? 2 : (window.devicePixelRatio||1);
+  g3.clearRect(0, 0, c3d.width/dpr, c3d.height/dpr);
+  if (!ref){
+    g3.fillStyle = "#5d6d7e"; g3.font = "13px system-ui"; g3.textAlign = "center";
+    g3.fillText("GPS konumu bekleniyor…", c3d.width/dpr/2, c3d.height/dpr/2);
+    g3.textAlign = "left";
+    return;
+  }
+  izgara(); planCiz(); inisCiz(); izCiz(); evIsareti(); ucakCiz();
+}
+
+/* --- kamera etkileşimi --- */
+(function kamera(){
+  const el = $("#panel3d");
+  let sonX = 0, sonY = 0, surukluyor = false, sonMesafe = 0;
+
+  el.addEventListener("pointerdown", e => {
+    if (e.target.id === "sigdir") return;
+    surukluyor = true; sonX = e.clientX; sonY = e.clientY;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", e => {
+    if (!surukluyor) return;
+    kam.az += (e.clientX - sonX) * 0.008;
+    kam.el = clamp(kam.el + (e.clientY - sonY) * 0.006, 0.06, 1.5);
+    sonX = e.clientX; sonY = e.clientY;
+    ciz3d();
+  });
+  const bitir = () => { surukluyor = false; };
+  el.addEventListener("pointerup", bitir);
+  el.addEventListener("pointercancel", bitir);
+
+  el.addEventListener("wheel", e => {
+    e.preventDefault();
+    kam.uzak = clamp(kam.uzak * (1 + Math.sign(e.deltaY)*0.13), 60, 8000);
+    ciz3d();
+  }, {passive:false});
+
+  el.addEventListener("touchmove", e => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (sonMesafe) { kam.uzak = clamp(kam.uzak * (sonMesafe/d), 60, 8000); ciz3d(); }
+    sonMesafe = d;
+  }, {passive:false});
+  el.addEventListener("touchend", () => { sonMesafe = 0; });
+
+  $("#sigdir").addEventListener("click", e => { e.stopPropagation(); sigdir(); });
+})();
+
+function sigdir(){
+  let en = 120;
+  const hepsi = planIz.concat(inisIz, iz);
+  if (T.lat != null && ref){ const p = enu(T.lat, T.lon, T.irtifa||0); if (p) hepsi.push(p); }
+  for (const p of hepsi) en = Math.max(en, Math.hypot(p.x, p.y), p.z || 0);
+  kam.uzak = clamp(en * 2.4, 80, 8000);
+  ciz3d();
+}
+
+/* =========================================================================
+   Yapay ufuk
+   ========================================================================= */
+const cu = $("#ufuk"), gu = cu.getContext("2d");
+function ufukCiz(){
+  const W = cu.width, H = cu.height, R = W/2;
+  gu.clearRect(0,0,W,H);
+  gu.save();
+  gu.beginPath(); gu.arc(R, R, R-4, 0, 7); gu.clip();
+
+  const roll = (T.roll || 0) * Math.PI/180;
+  const pitch = (T.pitch || 0);
+  const kayma = pitch * (R/45);            // 45° tam ekran
+
+  gu.translate(R, R); gu.rotate(-roll); gu.translate(0, kayma);
+  gu.fillStyle = "#2f7fc4";                              // gökyüzü
+  gu.fillRect(-R*2, -R*3, R*4, R*3);
+  gu.fillStyle = "#7a5230";                              // yer
+  gu.fillRect(-R*2, 0, R*4, R*3);
+  gu.strokeStyle = "#fff"; gu.lineWidth = 2;
+  gu.beginPath(); gu.moveTo(-R*2, 0); gu.lineTo(R*2, 0); gu.stroke();
+
+  // 10°'lik pitch merdiveni
+  gu.lineWidth = 1.4; gu.strokeStyle = "#dfe8f0";
+  for (let a = -30; a <= 30; a += 10){
+    if (a === 0) continue;
+    const y = -a * (R/45), g = a % 20 === 0 ? 22 : 13;
+    gu.beginPath(); gu.moveTo(-g, y); gu.lineTo(g, y); gu.stroke();
+  }
+  gu.restore();
+
+  // Sabit uçak imleci
+  gu.strokeStyle = "#ffd24a"; gu.lineWidth = 3;
+  gu.beginPath();
+  gu.moveTo(R-26, R); gu.lineTo(R-9, R);
+  gu.moveTo(R+9, R); gu.lineTo(R+26, R);
+  gu.moveTo(R, R-7); gu.lineTo(R, R);
+  gu.stroke();
+}
+
+/* =========================================================================
+   Telemetri döngüsü
+   ========================================================================= */
+let sonIzZaman = 0;
+
+async function telemetriDongusu(){
+  try {
+    T = await get("/api/telemetri");
+    ESIK = T.esikler || {};
+
+    // ENU orijini: kalkış noktası. Ev henüz gelmediyse ilk görülen konum.
+    if (!ref){
+      if (T.ev_lat != null) ref = {lat:T.ev_lat, lon:T.ev_lon};
+      else if (T.lat != null) ref = {lat:T.lat, lon:T.lon};
+      if (ref) sigdir();
+    }
+
+    // İz biriktir — saniyede bir nokta, 900 nokta (~15 dakika) sakla.
+    const simdi = Date.now();
+    if (ref && T.lat != null && simdi - sonIzZaman > 1000){
+      const p = enu(T.lat, T.lon, T.irtifa || 0);
+      const son = iz[iz.length-1];
+      if (p && (!son || Math.hypot(p.x-son.x, p.y-son.y) > 1.5)){
+        iz.push(p);
+        if (iz.length > 900) iz.shift();
+      }
+      sonIzZaman = simdi;
+    }
+
+    seritCiz(); mesafeKutuCiz(); ufukCiz(); ciz3d(); gorevDurumCiz();
+    inisHazirCiz(); linkCiz();
+    modVurgula();
+    armVurgula();
+  } catch(e){ /* sunucu kapalıysa sessizce dene */ }
+}
+setInterval(telemetriDongusu, 250);
+
+/* Telsiz link şeridi. SiK telsiz RADIO_STATUS'u kendisi üretir; araçtan
+   istenmez ve bant genişliğine yük bindirmez.
+
+   TAMPON en önemli sayı: telsizin gönderim tamponunda kalan yüzde. 100'ün
+   altına inip orada kalıyorsa link doymuştur ve joystick gecikmesi orada
+   birikiyordur — yumuşatma katsayısını kurcalamanın faydası olmaz.
+
+   RSSI ham birimdedir, dBm'e çevrilir: dBm = deger/1.9 - 127 (SiK firmware,
+   radio.c). PAY = (rssi - gurultu)/1.9, yani sinyalin gürültüden kaç dB
+   yukarıda olduğu — menzil bittiğinde ilk düşen budur. ~8 dB altı riskli. */
+function linkCiz(){
+  const el = $("#mLink");
+  if (T.link_rssi == null){ el.classList.remove("acik"); return; }
+  el.classList.add("acik");
+
+  const dbm = v => (v == null ? null : Math.round(v/1.9 - 127));
+  const pay = (r, n) => (r == null || n == null ? null : Math.round((r-n)/1.9));
+
+  const payYer  = pay(T.link_rssi, T.link_gurultu);
+  const payUzak = pay(T.link_uzak_rssi, T.link_uzak_gurultu);
+  const payMin  = [payYer, payUzak].filter(v => v != null);
+  const p = payMin.length ? Math.min(...payMin) : null;
+
+  const tampon = T.link_tampon;
+  const sinif = (deger, uyari, kotu) =>
+    deger == null ? "" : (deger <= kotu ? "kotu" : (deger <= uyari ? "uyari" : ""));
+
+  const parcalar = [
+    `sinyal <b>${dbm(T.link_rssi) ?? "—"} / ${dbm(T.link_uzak_rssi) ?? "—"}</b> dBm`,
+    `pay <b class="${sinif(p, 12, 8)}">${p ?? "—"}</b> dB`,
+    `tampon <b class="${sinif(tampon, 99, 60)}">%${tampon ?? "—"}</b>`,
+    `uplink <b>${T.joy_hz ?? "—"}</b> Hz`,
+  ];
+  if (T.link_duzeltilen) parcalar.push(`düzeltilen <b>${T.link_duzeltilen}</b>`);
+  // HER PARÇA KENDİ <span>'ında olmak ZORUNDA: #mLink bir flex kutu ve flex
+  // kutuda çıplak metin parçalarının her biri ayrı anonim flex öğesi olur.
+  // span'sız hâlde "sinyal", "-64 / -66", "dBm" ayrı ayrı öğe sayılır ve
+  // aralarına 16px boşluk girer — şerit okunmaz hâle gelir.
+  el.innerHTML = parcalar.map(x => `<span>${x}</span>`).join("");
+}
+
+function modVurgula(){
+  document.querySelectorAll("#modSec button").forEach(b => {
+    b.classList.toggle("sec", (T.mod||"").toLowerCase() === b.dataset.mod);
+  });
+}
+
+/* =========================================================================
+   Mesajlar
+   ========================================================================= */
+async function mesajDongusu(){
+  try {
+    const d = await get("/api/mesajlar");
+    $("#mesajlar").innerHTML = d.mesajlar.slice().reverse().map(m => {
+      const t = new Date(m.t * 1000).toLocaleTimeString("tr-TR");
+      const adet = m.adet > 1 ? ` ×${m.adet}` : "";
+      return `<div class="msj sev${m.sev}"><span class="t">${t}</span>
+              <span>${m.metin}${adet}</span></div>`;
+    }).join("") || `<div class="msj sev7"><span>—</span></div>`;
+  } catch(e){}
+}
+setInterval(mesajDongusu, 2000);
+mesajDongusu();
+
+/* =========================================================================
+   Şekil paneli
+   ========================================================================= */
+let sekil = "kare";
+const ETIKET = { kare:"Kenar (m)", daire:"Yarıçap (m)", elips:"Uzun eksen (m)" };
+const VARSAYILAN = { kare:250, daire:120, elips:170 };
+
+document.querySelectorAll("#sekilSec button").forEach(b => {
+  b.addEventListener("click", () => {
+    sekil = b.dataset.sekil;
+    document.querySelectorAll("#sekilSec button")
+      .forEach(x => x.classList.toggle("sec", x === b));
+    $("#etOlcu").textContent = ETIKET[sekil];
+    $("#fOlcu").value = VARSAYILAN[sekil];
+    $("#kutuOlcu2").style.display = (sekil === "elips") ? "" : "none";
+    planla();
+  });
+});
+
+// Pusula derecesini Türkçe yön adına çevirir — "270°" yerine "batı" okumak
+// sahada telefona bakarken çok daha hızlı doğrulanır.
+const YONLER = ["kuzey","kuzeydoğu","doğu","güneydoğu",
+                "güney","güneybatı","batı","kuzeybatı"];
+function bakiYon(derece){
+  return YONLER[Math.round((((derece % 360) + 360) % 360) / 45) % 8];
+}
+
+let bitince = "rtl";
+document.querySelectorAll("#bitinceSec button").forEach(b => {
+  b.addEventListener("click", () => {
+    bitince = b.dataset.bitince;
+    document.querySelectorAll("#bitinceSec button").forEach(x => {
+      const secili = (x === b);
+      x.classList.toggle("sec", secili);
+      // İniş seçiliyse turuncu, diğerleri mavi — 3B paneldeki iniş izinin rengi.
+      x.classList.toggle("inis", secili && bitince === "inis");
+    });
+    $("#kutuInisYon").style.display = (bitince === "inis") ? "" : "none";
+    planla();
+  });
+});
+
+function sekilGovde(){
+  const g = {
+    sekil, olcu: +$("#fOlcu").value, irtifa: +$("#fIrtifa").value,
+    tur: +$("#fTur").value, yon: +$("#fYon").value,
+    merkez: $("#fMerkez").value, bitince,
+    // inis bayrağı sunucuda görev bitişini EZER (api_gorev_yukle). İkisini
+    // ayrı göndermek "iniş yazıyor ama RTL yüklüyor" ayrışmasına açıktı.
+    inis: bitince === "inis", inis_yon: +$("#fInisYon").value
+  };
+  if (sekil === "elips") g.olcu2 = +$("#fOlcu2").value;
+  return g;
+}
+
+let planZaman = null, sonPlan = null;
+function planla(){
+  clearTimeout(planZaman);
+  planZaman = setTimeout(planlaSimdi, 220);   // yazarken her tuşta istek atma
+}
+async function planlaSimdi(){
+  let p;
+  try { p = await post("/api/gorev/plan", sekilGovde()); }
+  catch(e){ return; }
+
+  if (!p.ok){
+    $("#uyarilar").innerHTML = `<div class="uy uyari">${p.hata||"plan üretilemedi"}</div>`;
+    $("#olcumler").textContent = "";
+    planIz = []; ciz3d();
+    $("#bYukle").disabled = true;
+    return;
+  }
+  sonPlan = p;
+
+  // Önizlemeyi 3B panele koy
+  planIz = ref ? p.iz.map(n => enu(n.lat, n.lon, n.irtifa)).filter(Boolean) : [];
+  inisIz = (ref && p.inis)
+    ? p.inis.iz.map(n => enu(n.lat, n.lon, n.irtifa)).filter(Boolean) : [];
+  ciz3d();
+
+  const o = p.olcumler || {};
+  const parca = [];
+  if (o.cevre) parca.push(`çevre ${Math.round(o.cevre)} m`);
+  if (o.nokta) parca.push(`${o.nokta} nokta`);
+  if (o.aralik) parca.push(`aralık ${Math.round(o.aralik)} m`);
+  if (o.kabul_yaricapi) parca.push(`kabul ${o.kabul_yaricapi} m`);
+  if (o.min_egrilik) parca.push(`en dar kıvrım ${Math.round(o.min_egrilik)} m`);
+  if (o.ev_uzakligi_max) parca.push(`eve en fazla ${Math.round(o.ev_uzakligi_max)} m`);
+  if (o.toplam_sure_s) parca.push(`~${Math.round(o.toplam_sure_s/60)} dk`);
+  else if (o.tur_suresi_s) parca.push(`tur ${Math.round(o.tur_suresi_s)} sn`);
+  if (p.inis){
+    // Süzülme açısı YAKIN KENARDAN — uçak alçalma dairesinden teğet çıktığı
+    // için gerçek süzülüş merkeze göre hesaplanandan diktir (SITL'de ölçüldü:
+    // merkeze göre 8.9°, otopilotun uçtuğu 10.0°). Pilota uçulacak olanı
+    // gösteriyoruz, parantezde nominal duruyor.
+    parca.push(`iniş ${Math.round(p.inis.yon)}° · yaklaşma `
+      + `${Math.round(p.inis.mesafe)} m / ${Math.round(p.inis.yaklasma_irtifa)} m`
+      + ` · süzülme ${p.inis.suzulme_acisi}° (nominal `
+      + `${p.inis.suzulme_acisi_nominal}°)`);
+  }
+  $("#olcumler").textContent = parca.join(" · ");
+
+  const uy = (p.uyarilar||[]).map(u =>
+    `<div class="uy ${u.seviye === "engel" ? "engel" : "uyari"}">${u.metin}</div>`);
+  if (p.varsayilan_kullanildi && p.varsayilan_kullanildi.length){
+    uy.push(`<div class="uy bilgi">Araçtan okunamayan parametreler varsayılana
+             düşüldü: ${p.varsayilan_kullanildi.join(", ")}</div>`);
+  }
+  if (p.merkez_kaynak === "anlik_konum"){
+    uy.push(`<div class="uy bilgi">Kalkış noktası henüz bilinmiyor — şekil
+             uçağın anlık konumuna göre planlandı.</div>`);
+  }
+  if (p.inis){
+    // Bu sürpriz olmamalı: RTL_AUTOLAND=1 olduğu için görevde DO_LAND_START
+    // bulunması RTL'i de inişe çevirir (mode_rtl.cpp). Pilot RTL'e basınca
+    // uçağın çember çizmesini beklerse yanılır.
+    const ra = ESIK.RTL_AUTOLAND;
+    if (ra === 1 || ra === 2){
+      uy.push(`<div class="uy bilgi">Bu görev yüklüyken <b>RTL de iniş
+        yapar</b> — RTL_AUTOLAND=${ra}, uçak eve varınca görevdeki iniş
+        dizisine geçer. Sadece çember istiyorsanız önce görevi silin.</div>`);
+    }
+    uy.push(`<div class="uy bilgi">İniş yönü <b>${Math.round(p.inis.yon)}°</b>:
+      uçak final yaklaşmasını bu yöne uçarak yapar. <b>Rüzgâra karşı</b> seçin.
+      Yaklaşmaya başlangıç noktası kalkış yerinin
+      ${Math.round(p.inis.mesafe)} m ${bakiYon(p.inis.yon + 180)}sında.</div>`);
+  }
+  $("#uyarilar").innerHTML = uy.join("");
+  $("#bYukle").disabled = !!p.engel;
+}
+
+["#fOlcu","#fOlcu2","#fIrtifa","#fTur","#fYon","#fMerkez","#fInisYon"]
+  .forEach(s => $(s).addEventListener("input", planla));
+
+function gorevDurumCiz(){
+  const g = T.gorev || {};
+  const el = $("#gorevDurum");
+  if (!g.oge_sayisi){
+    el.innerHTML = g.hata
+      ? `<span style="color:var(--kirmizi)">${g.hata}</span>`
+      : `<span style="color:var(--soluk)">Araçta yüklü görev yok.</span>`;
+    $("#bBaslat").disabled = true;
+    return;
+  }
+  $("#bBaslat").disabled = false;
+  let s = `<span style="color:var(--yesil)">${(g.sekil||"").toUpperCase()}
+           yüklü — ${g.oge_sayisi} öğe, ${g.irtifa} m,
+           ${g.tur === 0 ? "∞" : g.tur} tur.</span>`;
+  // Yüklü görevin inişli olup olmadığı RTL'in ne yapacağını da belirler;
+  // pilot bunu butona basmadan önce görebilmeli.
+  s += g.inis_var
+    ? ` <span style="color:var(--turuncu)">🛬 Görev sonunda OTOMATİK İNİŞ`
+      + ((ESIK.RTL_AUTOLAND === 1 || ESIK.RTL_AUTOLAND === 2)
+          ? " — RTL de iniş yapar." : ".") + `</span>`
+    : ` <span style="color:var(--soluk)">İniş yok — bitince eve dönüp
+        çember çizer.</span>`;
+  if (g.aktif_seq != null) s += ` <b>Aktif öğe: ${g.aktif_seq}</b>`;
+  el.innerHTML = s;
+}
+
+$("#bYukle").addEventListener("click", async () => {
+  const b = $("#bYukle");
+  b.disabled = true; b.textContent = "YÜKLENİYOR…";
+  const r = await post("/api/gorev/yukle", sekilGovde());
+  b.textContent = "GÖREVİ YÜKLE"; b.disabled = false;
+  if (!r.ok){
+    const detay = [r.hata, r.mav_sonuc_adi].filter(Boolean).join(" — ");
+    $("#uyarilar").innerHTML =
+      `<div class="uy engel">Yüklenemedi: ${detay}</div>` +
+      (r.gerekceler||[]).map(x => `<div class="uy uyari">${x}</div>`).join("");
+  } else {
+    $("#uyarilar").innerHTML =
+      `<div class="uy bilgi">Görev yüklendi (${r.oge_sayisi} öğe, araçta
+       ${r.aractaki_oge} doğrulandı). Kalkış irtifası ${r.kalkis_irtifa} m.</div>`;
+  }
+});
+
+$("#bBaslat").addEventListener("click", async () => {
+  const r = await post("/api/gorev/baslat");
+  if (!r.ok){
+    $("#uyarilar").innerHTML = `<div class="uy engel">${r.hata||"AUTO'ya geçilemedi"}</div>`;
+    return;
+  }
+  // TKOFF_THR_MINACC = 12: ArduPlane motoru FIRLATMA İVMESİ görene kadar
+  // susturur. Bu yazılmazsa sahada "arayüz bozuk, motor dönmüyor" denir.
+  $("#uyarilar").innerHTML = `<div class="uy bilgi">AUTO'ya geçildi
+    ${r.kalkis_atlandi ? "(uçak havada — kalkış adımı atlandı)"
+      : "— motor, uçağı ATTIĞINIZDA dönmeye başlar (fırlatma ivmesi bekleniyor)"}.
+    </div>`;
+});
+
+$("#bGorevDur").addEventListener("click", async () => {
+  const r = await post("/api/gorev/dur");
+  $("#uyarilar").innerHTML = `<div class="uy ${r.ok?"bilgi":"engel"}">${
+    r.ok ? "Görev durduruldu — uçak LOITER'da bekliyor." : (r.hata||"durdurulamadı")}</div>`;
+});
+
+$("#bGorevSil").addEventListener("click", async () => {
+  const r = await post("/api/gorev/sil");
+  $("#uyarilar").innerHTML = `<div class="uy ${r.ok?"bilgi":"engel"}">${
+    r.ok ? "Araçtaki görev silindi." : "Görev silinemedi"}</div>`;
+  if (r.ok){ planIz = []; inisIz = []; ciz3d(); }
+});
+
+/* =========================================================================
+   Otomatik iniş (AUTOLAND)
+   ========================================================================= */
+
+/*
+  AUTOLAND, RTL'den bağımsız bir uçuş modudur (mod 26). Göreve BAKMAZ; kalkışta
+  yakalanan yönü kullanıp alçalma dairesi + final + flare paternini kendisi
+  kurar. Yani görevde iniş olmasa da bu buton çalışır.
+
+  Geri alınamaz bir karar olduğu için onay soruluyor: uçak inişe başladıktan
+  sonra vazgeçmek elle mod değiştirmeyi gerektirir.
+*/
+async function inisIste(notEl){
+  const yaz = (metin, renk) => {
+    if (!notEl) { if (metin) alert(metin); return; }
+    notEl.textContent = metin;
+    notEl.style.color = renk || "";
+  };
+
+  if (!confirm("Uçak KALKIŞ YERİNE inecek.\n\n"
+             + "AUTOLAND modu devreye girer; görev varsa yarıda kalır. "
+             + "Vazgeçmek için elle mod değiştirmeniz gerekir.\n\nDevam?")){
+    return;
+  }
+
+  yaz("İniş komutu gönderiliyor…", "var(--turuncu)");
+  const r = await post("/api/inis");
+  if (r.ok){
+    yaz("AUTOLAND — uçak kalkış yerine iniyor.", "var(--turuncu)");
+    return;
+  }
+  // Araçtan gelen STATUSTEXT'ler gerekçedir ("Must already be flying!",
+  // "Takeoff initial direction not set"). Yutmadan gösteriyoruz.
+  const detay = [r.hata].concat(r.gerekceler || []).filter(Boolean).join(" · ");
+  yaz(detay || "İniş komutu gönderilemedi", "var(--kirmizi)");
+}
+
+$("#bInis").addEventListener("click", () => inisIste($("#inisNot")));
+$("#mInis").addEventListener("click", () => inisIste($("#mNot")));
+
+/* =========================================================================
+   Mod / preflight / RTL
+   ========================================================================= */
+document.querySelectorAll("#modSec button").forEach(b => {
+  b.addEventListener("click", async () => {
+    const r = await post("/api/mod", {mod: b.dataset.mod});
+    if (!r.ok) alert(r.hata || "Mod değiştirilemedi");
+  });
+});
+
+$("#bEve").addEventListener("click", async () => {
+  const r = await post("/api/eve");
+  if (!r.ok) alert(r.hata || "RTL gönderilemedi");
+});
+
+/* --- AUTOTUNE aç/kapa ---
+   Aux fonksiyonu 107: bulunduğu modda öğrenmeyi açar, MOD DEĞİŞTİRMEZ.
+   Panelde mod AUTO kalmaya devam eder — bu doğru davranış, arıza değil. */
+$("#bAutotune").addEventListener("click", async () => {
+  const b = $("#bAutotune");
+  const acilacak = !b.classList.contains("acik");
+  b.disabled = true;
+  const r = await post("/api/autotune", {aktif: acilacak});
+  b.disabled = false;
+  if (r.ok) {
+    b.classList.toggle("acik", !!r.aktif);
+    b.textContent = r.aktif ? "AUTOTUNE — AÇIK ●" : "AUTOTUNE — KAPALI";
+    b.style.background = r.aktif ? "#3a2a0a" : "";
+    b.style.borderColor = r.aktif ? "var(--sari)" : "";
+    b.style.color = r.aktif ? "var(--sari)" : "";
+    b.style.fontWeight = r.aktif ? "700" : "";
+  } else {
+    const neden = (r.gerekceler && r.gerekceler.length)
+      ? "\n\n" + r.gerekceler.join("\n") : "";
+    alert((r.hata || "Autotune komutu reddedildi: " + (r.sonuc_adi || "")) + neden);
+  }
+});
+
+$("#bPreflight").addEventListener("click", async () => {
+  const b = $("#bPreflight"), c = $("#cikti");
+  b.disabled = true; b.textContent = "KONTROL EDİLİYOR…";
+  c.style.display = "block"; c.textContent = "çalışıyor…";
+  const r = await post("/api/preflight");
+  c.textContent = r.cikti || r.hata || "çıktı yok";
+  c.style.borderColor = r.ok ? "var(--yesil)" : "var(--kirmizi)";
+  b.textContent = "UÇUŞ ÖNCESİ KONTROL"; b.disabled = false;
+});
+
+/* =========================================================================
+   Manuel kontrol katmanı
+   -------------------------------------------------------------------------
+   Joystick 20 Hz gönderilir. Sunucudaki ölü adam anahtarı 1.5 saniye komut
+   gelmezse override'ı bırakır — telefon uykuya geçerse gaz akmaya devam
+   etmesin diye.
+   ========================================================================= */
+const katman = $("#manuelKatman");
+let joyAcik = false, joyR = 0, joyP = 0, gazDeger = 0;
+let wakeLock = null, sonYanit = 0;
+
+$("#manuelAc").addEventListener("click", async () => {
+  katman.classList.add("acik");
+  padBoyutlandir();
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch(e){}
+});
+
+$("#mKapat").addEventListener("click", kapatManuel);
+
+async function kapatManuel(){
+  await joystickKapat();
+  katman.classList.remove("acik");
+  if (wakeLock){ try { wakeLock.release(); } catch(e){} wakeLock = null; }
+}
+
+async function joystickAc(){
+  const r = await post("/api/joystick", {aktif: true});
+  if (!r.ok){
+    $("#mNot").textContent = r.hata || "Joystick açılamadı";
+    $("#mNot").style.color = "var(--kirmizi)";
+    return false;
+  }
+  joyAcik = true;
+  $("#mNot").textContent = "JOYSTICK AÇIK — kontrol sizde";
+  $("#mNot").style.color = "var(--yesil)";
+  return true;
+}
+
+async function joystickKapat(){
+  joyAcik = false; joyR = 0; joyP = 0; gazDeger = 0;
+  $("#gaz").value = 0; $("#gazDeger").textContent = "0";
+  padCiz();
+  try { await post("/api/joystick", {aktif: false}); } catch(e){}
+  $("#mNot").textContent = "Joystick kapalı — pada dokunun";
+  $("#mNot").style.color = "";
+}
+
+/* --- joystick padi --- */
+const pad = $("#pad"), pc = $("#padCanvas"), gp = pc.getContext("2d");
+let padAktif = false;
+
+function padBoyutlandir(){
+  const o = pad.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  pc.width = Math.round(o.width * dpr); pc.height = Math.round(o.height * dpr);
+  gp.setTransform(dpr,0,0,dpr,0,0);
+  padCiz();
+}
+window.addEventListener("resize", () => { if (katman.classList.contains("acik")) padBoyutlandir(); });
+
+function padCiz(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = pc.width/dpr, H = pc.height/dpr;
+  const cx = W/2, cy = H/2, R = Math.min(W,H)/2 - 14;
+  gp.clearRect(0,0,W,H);
+
+  gp.strokeStyle = "#243342"; gp.lineWidth = 1;
+  gp.beginPath(); gp.arc(cx, cy, R, 0, 7); gp.stroke();
+  gp.beginPath(); gp.arc(cx, cy, R*0.5, 0, 7); gp.stroke();
+  gp.beginPath(); gp.moveTo(cx-R, cy); gp.lineTo(cx+R, cy);
+  gp.moveTo(cx, cy-R); gp.lineTo(cx, cy+R); gp.stroke();
+
+  gp.fillStyle = "#3d4d5d"; gp.font = "10px system-ui"; gp.textAlign = "center";
+  // ETİKETLER UÇAK KONVANSİYONUNA GÖRE: çubuğu İLERİ it = burun AŞAĞI (dive),
+  // kendine ÇEK = burun YUKARI (climb). Vericiyle birebir aynı refleks.
+  //
+  // 21 Ağu 2026'da bu ikisi TERS yazılmıştı. Gerçek davranış hep doğruydu
+  // (pad yukarı -> RC2 override 2000 -> V yüzeyleri aşağı -> burun aşağı),
+  // yalnızca yazı yanlıştı. Sahada pilot etikete güvenip ters yöne itebilirdi.
+  // Ölçümle doğrulandı: verici sağ çubuk aşağı -> RC2=1000, SERVO5=1900 (V yukarı).
+  gp.fillText("BURUN YUKARI", cx, cy + R + 11);   // pad'in ALTI  = çubuğu çek
+  gp.fillText("BURUN AŞAĞI", cx, cy - R - 4);     // pad'in ÜSTÜ  = çubuğu it
+
+  const x = cx + (joyR/1000) * R, y = cy - (joyP/1000) * R;
+  gp.strokeStyle = joyAcik ? "#46e07a" : "#3d4d5d"; gp.lineWidth = 2;
+  gp.beginPath(); gp.moveTo(cx, cy); gp.lineTo(x, y); gp.stroke();
+  gp.fillStyle = joyAcik ? "#46e07a" : "#3d4d5d";
+  gp.beginPath(); gp.arc(x, y, 17, 0, 7); gp.fill();
+  gp.textAlign = "left";
+}
+
+async function padOlay(e){
+  const o = pad.getBoundingClientRect();
+  const R = Math.min(o.width, o.height)/2 - 14;
+  joyR = clamp(((e.clientX - o.left) - o.width/2) / R, -1, 1) * 1000;
+  joyP = clamp((o.height/2 - (e.clientY - o.top)) / R, -1, 1) * 1000;
+  padCiz();
+}
+
+pad.addEventListener("pointerdown", async e => {
+  pad.setPointerCapture(e.pointerId);
+  padAktif = true;
+  if (!joyAcik && !(await joystickAc())) { padAktif = false; return; }
+  padOlay(e);
+});
+pad.addEventListener("pointermove", e => { if (padAktif) padOlay(e); });
+function padBirak(){
+  padAktif = false;
+  joyR = 0; joyP = 0;    // eli çekince yüzeyler nötre dönsün
+  padCiz();
+}
+pad.addEventListener("pointerup", padBirak);
+pad.addEventListener("pointercancel", padBirak);
+
+/* --- gaz --- */
+$("#gaz").addEventListener("input", async e => {
+  gazDeger = +e.target.value;
+  $("#gazDeger").textContent = gazDeger;
+  if (!joyAcik && gazDeger > 0) await joystickAc();
+});
+$("#gazSifir").addEventListener("click", () => {
+  gazDeger = 0; $("#gaz").value = 0; $("#gazDeger").textContent = "0";
+});
+
+/* --- 20 Hz gönderim + ölü adam göstergesi --- */
+setInterval(async () => {
+  if (!joyAcik || !katman.classList.contains("acik")) return;
+  try {
+    const r = await post("/api/joystick", {
+      roll: Math.round(joyR), pitch: Math.round(joyP),
+      throttle: Math.round(gazDeger * 10)      // 0-100 → 0-1000
+    });
+    sonYanit = Date.now();
+    // Sunucu joystick'i kapattıysa (ölü adam, AUTO'ya geçiş, DISARM) arayüz
+    // de kapansın. SADECE bu yönde senkron: "açık" durumunu sunucudan geri
+    // almak, boşta duran bir sekmenin komut yayınlamasına yol açıyordu.
+    if (r && r.aktif === false && joyAcik) await joystickKapat();
+  } catch(e){}
+}, 50);
+
+setInterval(() => {
+  if (!katman.classList.contains("acik")) return;
+  const el = $("#olucu");
+  if (!joyAcik){ el.textContent = "bağlantı —"; el.classList.remove("kopuk"); return; }
+  const yas = (Date.now() - sonYanit) / 1000;
+  el.textContent = "bağlantı " + yas.toFixed(1) + " sn";
+  el.classList.toggle("kopuk", yas > 1.0);
+}, 100);
+
+/* --- sekme arkaya atılırsa / sayfa kapanırsa kontrolü bırak --- */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && joyAcik) joystickKapat();
+});
+window.addEventListener("pagehide", () => {
+  if (joyAcik) navigator.sendBeacon("/api/joystick",
+    new Blob([JSON.stringify({aktif:false})], {type:"application/json"}));
+});
+
+/* --- manuel paneldeki komutlar --- */
+$("#mArm").addEventListener("click", async () => {
+  const r = await post("/api/arm", {arm: true});
+  if (!r.ok){
+    alert("ARM reddedildi: " + (r.sonuc_adi||"") +
+          (r.gerekceler && r.gerekceler.length ? "\n\n" + r.gerekceler.join("\n") : ""));
+  }
+});
+// Normal DISARM: zorla YOK. Uçarken otopilot bunu reddeder ve bu istenen
+// davranıştır — yerde motoru kesmek için kullanılır.
+$("#mDisarm").addEventListener("click", async () => {
+  const r = await post("/api/arm", {arm: false});
+  if (!r.ok){
+    const not = $("#mNot");
+    not.textContent = ((T.irtifa || 0) > 5 || r.sonuc === 4)
+      ? "Disarm reddedildi — uçak havada. Gerçekten kesmek için ACİL butonu."
+      : ("Disarm başarısız: " + (r.sonuc_adi || ""));
+    not.style.color = "var(--turuncu)";
+  }
+});
+$("#mRtl").addEventListener("click", async () => {
+  const r = await post("/api/eve");
+  if (!r.ok) alert(r.hata || "RTL gönderilemedi");
+});
+
+/* ACİL — MOTORU DURDUR.
+
+   ZORLA DISARM. `zorla: true` ArduPilot'a param2 = 21196 gönderilmesini
+   sağlar; otopilotun "uçarken GCS disarm'ını reddet" kilidini atlar
+   (AP_Arming_Plane::disarm → do_disarm_checks false olur). Kullanıcının açık
+   ve tekrarlanmış tercihi bu.
+
+   ⚠ HAVADA BASILIRSA MOTOR GERÇEKTEN KESİLİR VE UÇAK DÜŞER. Buton bu yüzden
+   ayrı satırda, farklı renkte ve diğer kontrollerden uzakta duruyor. Yanlış
+   dokunmaya karşı tek koruma budur — onay penceresi kasten yok, çünkü acil
+   durumda araya bir tık daha koymak butonun amacını bozar.
+
+   Üstteki normal DISARM butonu `zorla` GÖNDERMEZ: orada otopilotun kilidi
+   yerinde kalır ve uçarken basılırsa reddedilir. İki buton bilinçli olarak
+   farklı davranır. */
+/* İki buton (manuel katman + ana sayfa) AYNI işleyiciyi paylaşır.
+   Kopyalanmış iki blok bırakmak, ileride birini düzeltip diğerini unutmak
+   demekti — acil durdurmada bu kabul edilemez. */
+async function acilMotorDurdur(notEl){
+  await joystickKapat();
+  const r = await post("/api/arm", {arm: false, zorla: true});
+  if (!notEl) return;
+  if (r.ok){
+    notEl.textContent = "MOTOR DURDURULDU — zorla disarm";
+    notEl.style.color = "var(--kirmizi)";
+  } else {
+    notEl.textContent = "Zorla disarm BAŞARISIZ: " + (r.sonuc_adi || r.hata || "");
+    notEl.style.color = "var(--turuncu)";
+  }
+}
+$("#mAcil").addEventListener("click", () => acilMotorDurdur($("#mNot")));
+$("#anaAcil").addEventListener("click", () => acilMotorDurdur($("#anaAcilNot")));
+
+/* --- ana sayfadaki ARM / DISARM ---
+
+   ARM'DA ONAY VAR, ACİL BUTONUNDA YOK. Bu asimetri bilinçli: ACİL güvenli
+   yöne gider (motoru keser), araya bir tık koymak butonun amacını bozar.
+   ARM tehlikeli yöne gider — pervane takılıysa yanlış dokunuş dönen bir
+   pervane demektir. Manuel katmandaki #mArm onaysız kalıyor, çünkü o katmanı
+   açmak zaten bilinçli bir adım; ana sayfa ise her zaman ekranda.
+
+   DISARM burada `zorla` GÖNDERMEZ. Uçarken otopilot reddeder ve bu istenen
+   davranıştır; havada gerçekten kesmek ACİL butonunun işi. */
+
+// armVurgula() saniyede birkaç kez çalışıyor ve notu tazeliyor. Ret gerekçesi
+// yazıldığında bu kilit olmasaydı otopilotun sebebi yarım saniyede silinir,
+// pilot ARM'ın NEDEN reddedildiğini hiç göremezdi.
+let armNotKilit = 0;
+function armNotYaz(metin, renk, saniye){
+  const not = $("#anaArmNot");
+  not.textContent = metin;
+  not.style.color = renk;
+  armNotKilit = Date.now() + (saniye || 0) * 1000;
+}
+
+function armVurgula(){
+  const a = T.armli;
+  // Zaten armlıyken ARM'a, disarmken DISARM'a basmanın anlamı yok.
+  // a == null (bağlantı yok) durumunda ikisi de açık kalır ki arayüz kilitlenmesin.
+  $("#anaArm").disabled    = (a === true);
+  $("#anaDisarm").disabled = (a === false);
+  if (Date.now() < armNotKilit) return;
+  if (a == null)   armNotYaz("durum — (araca bağlantı yok)", "var(--soluk)", 0);
+  else if (a)      armNotYaz("⚠ ARMLI — pervane her an dönebilir", "var(--kirmizi)", 0);
+  else             armNotYaz("disarm — motor kilitli", "var(--yesil)", 0);
+}
+
+$("#anaArm").addEventListener("click", async () => {
+  if (!confirm(`ARM EDİLECEK
+
+Pervane takılıysa motor her an dönebilir.
+Uçağın önünde ve arkasında kimse yok, değil mi?`)) return;
+  const r = await post("/api/arm", {arm: true});
+  if (!r.ok){
+    // Gerekçeler otopilotun kendi STATUSTEXT'leri — pilotun okuması gereken
+    // tam olarak bunlar, o yüzden alert yerine ekranda 12 saniye tutuluyor.
+    armNotYaz("ARM reddedildi: " + (r.sonuc_adi || r.hata || "")
+      + (r.gerekceler && r.gerekceler.length ? " — " + r.gerekceler.join(" · ") : ""),
+      "var(--turuncu)", 12);
+  }
+});
+
+$("#anaDisarm").addEventListener("click", async () => {
+  const r = await post("/api/arm", {arm: false});
+  if (!r.ok){
+    armNotYaz(((T.irtifa || 0) > 5 || r.sonuc === 4)
+      ? "Disarm reddedildi — uçak havada. Gerçekten kesmek için ACİL butonu."
+      : ("Disarm başarısız: " + (r.sonuc_adi || r.hata || "")),
+      "var(--turuncu)", 12);
+  }
+});
+
+/* =========================================================================
+   Başlangıç
+   ========================================================================= */
+boyutlandir();
+telemetriDongusu().then(planla);
+</script>
+</body>
+</html>
