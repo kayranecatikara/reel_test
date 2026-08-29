@@ -2192,3 +2192,74 @@ def test_R71_ws_komutu_HTTP_ile_AYNI_isi_yapiyor():
         P._Islem._ws_komut({"c": "yok_boyle"})
     finally:
         P._D.update(eski)
+
+
+# ======================================================================
+#  TALON GÖREV PLANLAYICI — R72..R73
+# ======================================================================
+def _gp():
+    sys.path.insert(0, os.path.join(REEL, "talon"))
+    import gorev_plani
+    return gorev_plani
+
+
+# ---------------------------------------------------------------- R72
+def test_R72_gorev_YAPISI_ArduPlane_sirasina_uyuyor():
+    """ArduPlane görev sırası: ev · TAKEOFF · waypoint'ler · bitiş.
+
+    ⛔ SIRA BOZULURSA UÇAK KALKMAZ ya da yanlış yere gider. Özellikle:
+       * seq 0 EV noktasıdır ve `current=1` olmalı
+       * TAKEOFF waypoint'lerden ÖNCE gelmeli
+       * son öğe RTL ya da LOITER olmalı — yoksa görev bitince uçak
+         son waypoint'te ne yapacağını bilmez
+    """
+    gp = _gp()
+    from pymavlink import mavutil as _mv
+    M = _mv.mavlink
+    ev = (41.10500, 29.02300, 120.0)
+    n = [{"kuzey": 300, "dogu": 0, "irtifa": 80},
+         {"kuzey": 300, "dogu": 400, "irtifa": 100}]
+    o = gp.gorev_kur(n, ev, kalkis_irtifa=50, bitince="rtl")
+
+    assert len(o) == len(n) + 3, "ev + TAKEOFF + n + bitiş olmalı"
+    assert o[0]["command"] == M.MAV_CMD_NAV_WAYPOINT and o[0]["current"] == 1
+    assert o[1]["command"] == M.MAV_CMD_NAV_TAKEOFF
+    assert o[1]["z"] == 50.0 and o[1]["param1"] > 0, "kalkış açısı verilmeli"
+    for i in range(2, 2 + len(n)):
+        assert o[i]["command"] == M.MAV_CMD_NAV_WAYPOINT
+    assert o[-1]["command"] == M.MAV_CMD_NAV_RETURN_TO_LAUNCH
+    # seq'ler ARDIŞIK ve 0'dan başlamalı
+    assert [x["seq"] for x in o] == list(range(len(o)))
+    # LOITER seçeneği
+    o2 = gp.gorev_kur(n, ev, bitince="loiter")
+    assert o2[-1]["command"] == M.MAV_CMD_NAV_LOITER_UNLIM
+
+    # ⛔ MISSION_ITEM_INT: lat/lon TAM SAYI (1e-7 derece) olmalı
+    for x in o:
+        assert isinstance(x["x"], int) and isinstance(x["y"], int), (
+            "float lat/lon ~1 m kuantalama demektir; INT kullanılmalı")
+
+
+# ---------------------------------------------------------------- R73
+def test_R73_waypoint_METREDEN_DERECEYE_dogru_ceviriliyor():
+    """Yerel metre -> enlem/boylam çevrimi, `konum.py` ile AYNI olmalı.
+
+    ⛔ İKİ AYRI ÇEVRİM = iki ayrı dünya. Drone panelindeki 3B görünüm ve
+       Talon görev planı AYNI çerçeveyi kullanmalı, yoksa "300 m kuzey"
+       ikisinde farklı yere düşer.
+    """
+    gp = _gp()
+    ev = (41.10500, 29.02300, 120.0)
+    cer = K.YerelCerceve().kokeni_kur(*ev)
+    n = [{"kuzey": 300, "dogu": 400, "irtifa": 80},
+         {"kuzey": -150, "dogu": -250, "irtifa": 60}]
+    o = gp.gorev_kur(n, ev, kalkis_irtifa=50)
+    for i, nk in enumerate(n):
+        oge = o[2 + i]
+        enlem, boylam = oge["x"] / 1e7, oge["y"] / 1e7
+        x, y, _ = cer.metreye(enlem, boylam, irtifa_amsl=ev[2])
+        assert abs(x - nk["kuzey"]) < 0.5, (
+            "kuzey %d m istendi, %0.1f m çıktı" % (nk["kuzey"], x))
+        assert abs(y - nk["dogu"]) < 0.5, (
+            "doğu %d m istendi, %0.1f m çıktı" % (nk["dogu"], y))
+        assert oge["z"] == float(nk["irtifa"])
