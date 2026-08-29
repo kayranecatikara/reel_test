@@ -2109,3 +2109,86 @@ def test_R69_kamera_DAHILI_webcami_ELIYOR():
         assert yol3 is None and "kare vermiyor" in g3
     finally:
         KY.cihazlari_tara = eski
+
+
+# ---------------------------------------------------------------- R70
+def test_R70_websocket_CERCEVELEME_ve_EL_SIKISMA():
+    """⛔ SAHADA GÖRÜLDÜ (2026-08-29): panel donuyordu ve MANUEL düğmesine
+    basılmasına rağmen kip OTONOM kalıyordu.
+
+    Ölçüldü: sunucu kip değişikliğini YÜK ALTINDA 0.5 ms'de işliyordu —
+    yani sorun hiçbir zaman sunucuda değildi. Panelin üç HTTP akışı
+    (30 Hz çubuk + 5 Hz durum + 15 Hz kare) Chrome'un kaynak başına
+    6 bağlantısını doldurup istekleri KUYRUĞA alıyordu; düğme tıklaması
+    da o kuyruğa giriyordu.
+
+    Çözüm: TEK WebSocket. Bu bekçi çerçevelemenin doğruluğunu sınar —
+    protokol hatası, sahada "bağlanmıyor" diye görünür.
+    """
+    import base64 as _b64, hashlib as _h
+    from gercek import panel as P
+
+    # (a) RFC 6455 el sıkışma anahtarı — bilinen örnek
+    anahtar = "dGhlIHNhbXBsZSBub25jZQ=="
+    kabul = _b64.b64encode(_h.sha1((anahtar + P._WS_SIHIR).encode()).digest()).decode()
+    assert kabul == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", (
+        "el sıkışma hesabı RFC 6455 örneğini tutturmuyor: %s" % kabul)
+
+    # (b) sunucu -> istemci çerçevesi MASKESİZ ve doğru uzunluk alanlı
+    for n in (5, 125, 126, 300, 70000):
+        c = P._ws_cerceve(b"x" * n)
+        assert c[0] == 0x81, "FIN+text olmalı"
+        assert not (c[1] & 0x80), "sunucu çerçevesi MASKELİ olmamalı (RFC)"
+        uz = c[1] & 0x7F
+        if n < 126:
+            assert uz == n and len(c) == n + 2
+        elif n < 65536:
+            assert uz == 126 and len(c) == n + 4
+        else:
+            assert uz == 127 and len(c) == n + 10
+
+    # (c) istemci -> sunucu çözümü: MASKE açılmalı
+    import io as _io, os as _os, struct as _st
+    veri = b'{"c":"kip","kip":"MANUEL"}'
+    m = _os.urandom(4)
+    ham = (bytes([0x81, 0x80 | len(veri)]) + m
+           + bytes(b ^ m[i & 3] for i, b in enumerate(veri)))
+    opkod, yuk = P._ws_oku(_io.BytesIO(ham))
+    assert opkod == 0x1 and yuk == veri, "maske açılmadı"
+
+    # (d) ⛔ DEV ÇERÇEVE REDDEDİLMELİ (bellek koruması)
+    dev = bytes([0x81, 0x80 | 127]) + _st.pack(">Q", 1 << 30) + b"\x00" * 4
+    assert P._ws_oku(_io.BytesIO(dev)) is None, "1 GB'lık çerçeve kabul edildi"
+
+
+# ---------------------------------------------------------------- R71
+def test_R71_ws_komutu_HTTP_ile_AYNI_isi_yapiyor():
+    """WS ve HTTP yolları AYNI işi yapmalı — iki kopya davranış AYRIŞIR.
+
+    ⛔ HTTP yolu yedek olarak duruyor (WS kurulamazsa). İkisi farklı
+       davranırsa, yedeğe düşen bir uçuş sessizce başka bir sistem olur.
+    """
+    from gercek import panel as P
+    sp, bag, km, ks = _duzenek(arm=True, kip_anahtari=True)
+    ks.kumanda = None
+    eski = dict(P._D)
+    try:
+        P._D["komut"] = ks
+        P._Islem._ws_komut({"c": "cubuk", "thr": -0.33, "pitch": 0.11,
+                            "roll": -0.22, "yaw": 0.05, "arm": True, "izin": True})
+        ok, d = ks.tik()
+        assert d["insan"] == "panel"
+        assert [round(x, 2) for x in d["komut"]] == [-0.33, 0.11, -0.22, 0.05]
+        assert d["arm"] is True
+
+        P._Islem._ws_komut({"c": "kip", "kip": "OTONOM"})
+        assert ks.kip == "OTONOM"
+        P._Islem._ws_komut({"c": "kip", "kip": "MANUEL"})
+        assert ks.kip == "MANUEL"
+        # geçersiz kip PATLATMAMALI
+        P._Islem._ws_komut({"c": "kip", "kip": "SACMA"})
+        assert ks.kip == "MANUEL"
+        # bilinmeyen komut da patlatmamalı
+        P._Islem._ws_komut({"c": "yok_boyle"})
+    finally:
+        P._D.update(eski)

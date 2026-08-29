@@ -24,8 +24,11 @@ Adres: http://<drone-bilgisayari>:8810
   sanmak, aracı son verilen komutla sonsuza dek uçurmaktır.
 ================================================================================
 """
+import base64
+import hashlib
 import json
 import os
+import struct
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,6 +49,90 @@ def kare_bildir():
     with _kosul:
         _kare_sayac[0] += 1
         _kosul.notify_all()
+
+
+# ======================================================================
+#  WEBSOCKET — panelin ANA kanalı
+# ======================================================================
+# ⛔⛔ NİYE WEBSOCKET — HTTP İSTEK YIĞINI PANELİ DONDURUYORDU (2026-08-29):
+#   Panelin üç ayrı akışı vardı: 30 Hz çubuk POST'u, 5 Hz durum GET'i,
+#   15 Hz kare isteği. Hepsi AYNI kaynağa gidiyor ve Chrome'un HTTP/1.1
+#   için kaynak başına eşzamanlı bağlantı sınırı 6'dır. ~50 istek/s bu
+#   havuza binince tarayıcı istekleri KUYRUĞA alır; kuyruk büyüdükçe
+#   arayüz tepkisiz görünür ve DÜĞME TIKLAMALARI BİLE GEÇMEZ.
+#   ⭐ ÖLÇÜLDÜ: sunucu bu sırada kip değişikliğini 0.5 ms'de işliyordu —
+#     yani sorun HİÇBİR ZAMAN sunucuda değildi, tarayıcının kuyruğundaydı.
+#
+#   WebSocket bunu KÖKÜNDEN kaldırır: TEK kalıcı bağlantı, çift yönlü,
+#   istek/yanıt yükü yok, kuyruk yok. Çubuklar yukarı, durum aşağı, hepsi
+#   o tek kanaldan. Havuzda 5 boş slot kalır (kareler için fazlasıyla).
+#
+# ⚠ SAF STDLIB: harici kütüphane yok (panel sahada internetsiz çalışır).
+#   El sıkışma RFC 6455'in kendisidir; çerçeveleme aşağıda.
+#
+# ⛔ HTTP YOLU SİLİNMEDİ: WebSocket kurulamazsa istemci kendiliğinden
+#   eski yola düşer. Tek yol bırakmak, yeni bir tek arıza noktası olurdu.
+
+_WS_SIHIR = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_ws_istemciler = set()
+_ws_kilit = threading.Lock()
+
+
+def _ws_cerceve(veri, opkod=0x1):
+    """Sunucu -> istemci çerçevesi (maskesiz)."""
+    n = len(veri)
+    bas = bytes([0x80 | opkod])
+    if n < 126:
+        bas += bytes([n])
+    elif n < 65536:
+        bas += bytes([126]) + struct.pack(">H", n)
+    else:
+        bas += bytes([127]) + struct.pack(">Q", n)
+    return bas + veri
+
+
+def _ws_oku(rfile):
+    """İstemci -> sunucu çerçevesi. Döner: (opkod, yuk) ya da None."""
+    bas = rfile.read(2)
+    if len(bas) < 2:
+        return None
+    b1, b2 = bas[0], bas[1]
+    opkod = b1 & 0x0F
+    maskeli = b2 & 0x80
+    n = b2 & 0x7F
+    if n == 126:
+        n = struct.unpack(">H", rfile.read(2))[0]
+    elif n == 127:
+        n = struct.unpack(">Q", rfile.read(8))[0]
+    if n > 1 << 20:                      # 1 MB üstü çerçeve kabul edilmez
+        return None
+    maske = rfile.read(4) if maskeli else b"\x00" * 4
+    yuk = bytearray(rfile.read(n))
+    if maskeli:
+        for i in range(n):
+            yuk[i] ^= maske[i & 3]
+    return opkod, bytes(yuk)
+
+
+def _ws_yayinla():
+    """Bağlı bütün panellere durum gönder. Kendi iş parçacığında koşar."""
+    while True:
+        time.sleep(0.1)                  # 10 Hz
+        with _ws_kilit:
+            istemciler = list(_ws_istemciler)
+        if not istemciler:
+            continue
+        try:
+            veri = json.dumps(_durum()).encode("utf-8")
+        except Exception:
+            continue
+        cer = _ws_cerceve(veri)
+        for c in istemciler:
+            try:
+                c.sendall(cer)
+            except Exception:
+                with _ws_kilit:
+                    _ws_istemciler.discard(c)
 
 
 # ======================================================================
@@ -304,7 +391,11 @@ const yerR=pad(document.getElementById("padR"),document.getElementById("topuzR")
 
 document.getElementById("b_manuel").onclick=()=>kip("MANUEL");
 document.getElementById("b_otonom").onclick=()=>kip("OTONOM");
-function kip(k){ fetch("/api/kip",{method:"POST",body:JSON.stringify({kip:k})});
+function kip(k){
+  // ⛔ ÖNCE WS: HTTP kuyruğa girip GECİKEBİLİR (sahada tam bu oldu —
+  //   MANUEL'e basıldı, düğme maviye döndü ama kip OTONOM kaldı).
+  if(!wsGonder({c:"kip",kip:k}))
+    fetch("/api/kip",{method:"POST",body:JSON.stringify({kip:k})}).catch(()=>{});
   document.getElementById("b_manuel").classList.toggle("aktif",k=="MANUEL");
   document.getElementById("b_otonom").classList.toggle("aktif",k=="OTONOM");
   S.izin=(k=="OTONOM"); }
@@ -312,7 +403,8 @@ function kip(k){ fetch("/api/kip",{method:"POST",body:JSON.stringify({kip:k})});
 //    Bütün GPS koordinatları buna göre metreye çevrilir; uçuş ortasında
 //    değiştirmek güdümün altındaki zemini kaydırmak demektir.
 document.getElementById("b_koken").onclick=async()=>{
-  const r=await (await fetch("/api/koken",{method:"POST",body:"{}"})).json();
+  const r=await (await fetch("/api/koken",{method:"POST",body:"{}"}).catch(
+      ()=>({json:()=>({ok:false,mesaj:"istek gitmedi"})}))).json();
   document.getElementById("uyarilar").textContent=r.mesaj||"";
   if(!r.ok && confirm(r.mesaj+"\n\nYine de ZORLA kurulsun mu? (zayıf fix "+
      "bütün uçuşu kaydırır)")){
@@ -337,12 +429,47 @@ bArm.addEventListener("pointercancel",armBirak);
 //   bitmeden yenisi ateşleniyordu. Tarayıcının bağlantı havuzu (kaynak
 //   başına ~6) MJPEG akışıyla birlikte dolduğunda istekler kuyruğa
 //   yığılıyor ve arayüz tıkanıyor. Şimdi: bir seferde EN FAZLA BİR istek.
+// ======================================================================
+//  WEBSOCKET — ANA KANAL
+// ======================================================================
+// ⛔ NİYE: panelin üç HTTP akışı (30 Hz çubuk, 5 Hz durum, 15 Hz kare)
+//   Chrome'un kaynak başına 6 bağlantısını doldurup istekleri KUYRUĞA
+//   alıyordu; kuyruk büyüyünce arayüz tepkisiz kalıyor ve DÜĞME
+//   TIKLAMALARI BİLE GEÇMİYORDU. Sunucu bu sırada kip değişikliğini
+//   0.5 ms'de işliyordu — sorun hiçbir zaman sunucuda değildi.
+//   Tek WebSocket bunu kökünden kaldırır: kuyruk yok, istek yükü yok.
+// ⛔ HTTP YOLU YEDEK OLARAK DURUYOR: WS kurulamazsa kendiliğinden ona
+//   düşülür. Tek yol bırakmak yeni bir tek arıza noktası olurdu.
+let ws=null, wsAcik=false;
+function wsBagla(){
+  try{
+    ws = new WebSocket((location.protocol==="https:"?"wss://":"ws://")
+                        + location.host + "/ws");
+  }catch(e){ setTimeout(wsBagla,1000); return; }
+  ws.onopen   = ()=>{ wsAcik=true; postHata=0; };
+  ws.onmessage= (e)=>{ sonBasarili=Date.now(); postSay++;
+                       try{ gosterim(JSON.parse(e.data)); }
+                       catch(err){ jsHata="JS(durum): "+(err&&err.message||err); } };
+  ws.onclose  = ()=>{ wsAcik=false; ws=null; setTimeout(wsBagla,800); };
+  ws.onerror  = ()=>{ try{ws.close();}catch(_){} };
+}
+wsBagla();
+function wsGonder(o){
+  if(ws && wsAcik && ws.readyState===1){
+    try{ ws.send(JSON.stringify(o)); return true; }catch(e){}
+  }
+  return false;
+}
+
+// --- ÇUBUK GÖNDERİMİ: WS varsa oradan, yoksa HTTP yedeği ---
 function manuelGonder(){
+  if(wsGonder(Object.assign({c:"cubuk"}, S))){
+    setTimeout(manuelGonder,33); return;
+  }
   if(ucusta>0){ setTimeout(manuelGonder,10); return; }
   ucusta++;
   // ⛔ ZAMAN AŞIMI ŞART: zaman aşımsız bir fetch SONSUZA KADAR asılı
   //   kalabilir; `ucusta` bir daha düşmez ve komut akışı KALICI durur.
-  //   AbortController bunu imkânsız kılar.
   const iptal=new AbortController();
   const zam=setTimeout(()=>iptal.abort(),800);
   fetch("/api/manuel",{method:"POST",body:JSON.stringify(S),signal:iptal.signal})
@@ -496,8 +623,10 @@ setInterval(c3ciz, 100);
 const sat=(a,b,s)=>`<tr><td class=sonuk>${a}</td><td class="${s||''}">${b}</td></tr>`;
 function rozet(id,ok,metin){ const e=document.getElementById(id);
   e.className="rozet "+(ok===true?"ok":ok===false?"kotu":"uyari"); e.textContent=metin; }
+// HTTP YEDEK durum döngüsü — YALNIZ WebSocket yokken koşar.
 let durumUcusta=false;
 setInterval(async()=>{
+  if(wsAcik) return;                    // WS varken HTTP'ye HİÇ gidilmez
   if(durumUcusta) return;               // geri basınç: kuyruk yığılmasın
   durumUcusta=true;
   const iptal=new AbortController();
@@ -506,6 +635,13 @@ setInterval(async()=>{
   try{ d=await (await fetch("/api/durum",{signal:iptal.signal})).json(); }
   catch(e){ clearTimeout(zam); durumUcusta=false; return; }
   clearTimeout(zam); durumUcusta=false;
+  sonBasarili=Date.now(); postSay++;
+  gosterim(d);
+},200);
+
+// ⛔ GÖSTERİM TEK FONKSİYONDA: hem WS hem HTTP yolu AYNI kodu çağırır.
+//   İki kopya tutmak, birinde düzeltilen hatanın öbüründe kalması demektir.
+function gosterim(d){
   // ⛔ TÜM GÖSTERİM İŞİ TRY İÇİNDE: burada atılan bir istisna her tikte
   //   tekrarlanır ve arayüz "donmuş" görünür. Hata ekrana yazılır.
   try{
@@ -552,8 +688,8 @@ setInterval(async()=>{
     sat("kamera",kam.acik?((kam.cihaz||"?")+"  "+(kam.genislik||0)+"x"+
         (kam.yukseklik||0)+" @"+(kam.sayac||0)):"kapalı")+
     sat("CRC hatası",a.crc_hata??"—")+
-    sat("panel→sunucu",postHz+" Hz"+(postHata?("  ⛔ "+postHata+" hata"):"")+
-        "   fpv "+kareHz+" Hz")+
+    sat("panel↔sunucu",(wsAcik?"WS ":"HTTP ")+postHz+" Hz"+
+        (postHata?("  ⛔ "+postHata+" hata"):"")+"   fpv "+kareHz+" Hz")+
     sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor")
         :("aranıyor… "+((k.sayac&&k.sayac.kmd_arama)||0)+" deneme  "+
           "(EdgeTX USB Mode = Joystick?)"));
@@ -578,7 +714,7 @@ setInterval(async()=>{
   document.getElementById("uyarilar").textContent=u.join("   ");
   }catch(e){ jsHata="JS(durum): "+(e&&e.message||e);
              document.getElementById("uyarilar").textContent="⛔ "+jsHata; }
-},200);
+}
 </script></body></html>"""
 
 
@@ -611,6 +747,8 @@ class _Islem(BaseHTTPRequestHandler):
                              json.dumps(_durum()).encode("utf-8"))
         if self.path.startswith("/kare.jpg"):
             return self._tek_kare()
+        if self.path == "/ws":
+            return self._websocket()
         if self.path == "/video":
             return self._video()          # ⚠ eski MJPEG; artık kullanılmıyor
         self._yaz(404, "text/plain", b"yok")
@@ -639,6 +777,63 @@ class _Islem(BaseHTTPRequestHandler):
             return self._yaz(200, "application/json",
                              json.dumps({"ok": ok, "mesaj": mesaj}).encode())
         self._yaz(404, "application/json", b'{"ok":0}')
+
+    # ---------------- WEBSOCKET ----------------
+    def _websocket(self):
+        anahtar = self.headers.get("Sec-WebSocket-Key")
+        if not anahtar:
+            return self._yaz(400, "text/plain", b"websocket degil")
+        kabul = base64.b64encode(hashlib.sha1(
+            (anahtar + _WS_SIHIR).encode()).digest()).decode()
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", kabul)
+        self.end_headers()
+        sok = self.connection
+        with _ws_kilit:
+            _ws_istemciler.add(sok)
+        try:
+            while True:
+                c = _ws_oku(self.rfile)
+                if c is None:
+                    break
+                opkod, yuk = c
+                if opkod == 0x8:                    # kapat
+                    break
+                if opkod == 0x9:                    # ping -> pong
+                    sok.sendall(_ws_cerceve(yuk, 0xA))
+                    continue
+                if opkod != 0x1:
+                    continue
+                try:
+                    m = json.loads(yuk.decode("utf-8"))
+                except Exception:
+                    continue
+                self._ws_komut(m)
+        except Exception:
+            pass
+        finally:
+            with _ws_kilit:
+                _ws_istemciler.discard(sok)
+
+    @staticmethod
+    def _ws_komut(m):
+        """Panelden gelen tek mesaj. ⛔ HTTP yoluyla AYNI işi yapar."""
+        ks = _D["komut"]
+        c = m.get("c")
+        if c == "cubuk" and ks is not None:
+            ks.panel_yaz(float(m.get("thr", 0.0)), float(m.get("pitch", 0.0)),
+                         float(m.get("roll", 0.0)), float(m.get("yaw", 0.0)),
+                         arm=bool(m.get("arm", False)),
+                         otonom_izin=bool(m.get("izin", False)))
+        elif c == "kip" and ks is not None:
+            try:
+                ks.kip_sec(str(m.get("kip", "MANUEL")).upper())
+            except ValueError:
+                pass
+        elif c == "koken" and _D["baglanti"] is not None:
+            _D["baglanti"].kokeni_kur(bool(m.get("zorla")))
 
     # ---------------- TEK KARE (varsayılan yol) ----------------
     def _tek_kare(self):
@@ -734,6 +929,7 @@ def baslat(port=None):
     _sunucu.daemon_threads = True
     threading.Thread(target=_sunucu.serve_forever, daemon=True,
                      name="panel").start()
+    threading.Thread(target=_ws_yayinla, daemon=True, name="panel-ws").start()
     return port
 
 
