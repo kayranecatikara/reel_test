@@ -3749,3 +3749,60 @@ def test_R116_RTL_hakeme_dokunmaz_ve_kokensiz_baslamaz():
     assert '_D["rtl"].dur()' in p[bas:bas + 900], (
         "MANUEL RTL'i kesmiyor — pilot tekrar OTONOM'a bastığında araç "
         "hedefe değil EVE uçar")
+
+
+def test_R117_menzil_olcumu_BALIKGOZU_TELAFI_ederek_C_bulur():
+    """⭐ MENZIL_C TÜRETME DEĞİL ÖLÇÜM olmalı.
+
+    Türetilmiş C iki varsayım taşır: FOV'un hangi eksende verildiği
+    (köşegen/yatay/dikey → 676/541/406) ve dedektör kutu payı (simde
+    %7.4, gerçek modelde bilinmiyor). Tek ölçüm ikisini de gereksiz
+    kılar:  C = kutu_ölçüsü × R.
+
+    ⛔ BALIKGÖZ TELAFİSİ ŞART: kutu kenardaysa balıkgöz onu büyütür ve
+      telafisiz ölçüm kutunun NEREDE durduğuna göre farklı C verir.
+      C MERKEZ referanslı olmalı.
+    """
+    import subprocess
+    ORT = dict(os.environ, DOW_OPTIK_W="640", DOW_OPTIK_H="480",
+               DOW_OPTIK_MODEL="esuzaklik", DOW_OPTIK_FOV_KOSEGEN="125")
+    kod = """
+import math
+from dow.gorus import kamera as KAM
+GERCEK = 850.0
+cikan = []
+for R, dx in ((5.0,0),(10.0,0),(20.0,0),(10.0,250),(15.0,-200)):
+    kos_merkez = GERCEK / R
+    cx, cy = KAM.CX + dx, KAM.CY
+    s = KAM.olcek_duzeltme(cx, cy)
+    kos = kos_merkez * s                 # kameranin GORDUGU kutu
+    cikan.append(kos * R / s)            # aracin YAPTIGI hesap
+print(max(abs(c-GERCEK) for c in cikan))
+"""
+    c = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=ORT,
+                       capture_output=True, text=True)
+    assert c.returncode == 0, c.stderr[:400]
+    assert float(c.stdout) < 1e-6, (
+        "ölçüm bilinen C'yi geri vermiyor (hata %s)" % c.stdout.strip())
+
+    # ⛔ telafi OLMASAYDI kenarda hata olmalıydı — bekçi anlamlı mı
+    kod2 = """
+from dow.gorus import kamera as KAM
+print(KAM.olcek_duzeltme(KAM.CX+250, KAM.CY))
+"""
+    c2 = subprocess.run([sys.executable, "-c", kod2], cwd=KOK, env=ORT,
+                        capture_output=True, text=True)
+    assert float(c2.stdout) > 1.02, (
+        "kenarda ölçek düzeltmesi ~1 — bu bekçi hiçbir şey sınamıyor")
+
+    # araç: medyan kullanmalı, ortalama DEĞİL
+    k = open(os.path.join(REEL, "gercek", "menzil_olc.py"),
+             encoding="utf-8").read()
+    assert "statistics.median" in k, (
+        "ortalama kullanılıyor — tek kötü kare sonucu çeker")
+    assert "olcek_duzeltme" in k, "balıkgöz telafisi yok"
+    assert "IbvsCfg.MENZIL_OLCU" in k, (
+        "güdümün ölçüsü (max/kosegen) dikkate alınmıyor — farklı ölçü "
+        "farklı C demektir")
+    # saçma mesafe reddedilmeli
+    assert "0.5 <= a.mesafe <= 500.0" in k
