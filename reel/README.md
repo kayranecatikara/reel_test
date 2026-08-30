@@ -64,13 +64,22 @@ donanımda çalıştırmak için. İki bilgisayar, iki araç, tek görev.
 ```
 ARM        AUX1 (kanal 5)  1800-2100
 ANGLE      AUX5 (kanal 9)  900-2100      -> DAİMA AÇIK
-ALTHOLD    AUX2 (kanal 6)  1700-2100     -> ⛔ KULLANILMIYOR (şartname)
-POS HOLD   AUX4 (kanal 8)  1700-2100     -> ⛔ KULLANILMIYOR (şartname)
+ALTHOLD    AUX2 (kanal 6)  1700-2100     -> ⬇ DİKEY İNİŞ düğmesi açar
+POS HOLD   AUX4 (kanal 8)  1700-2100     -> ⬇ DİKEY İNİŞ düğmesi açar
 angle_limit = 60            failsafe_procedure = AUTO-LAND
 ```
 
-⛔ Kullanılmayan kanallarımız **1500 µs** gider; bu 1700'ün altındadır, yani
-ALTHOLD ve POS HOLD **yapısal olarak kapalı kalır.** Şartname ihlali imkânsızdır.
+Bu kanallar normalde **eşiğin altında** gider, yani görev boyunca ALTHOLD ve
+POS HOLD **kapalıdır**. Yalnız panelden **⬇ DİKEY İNİŞ** düğmesine basılınca
+1899 µs'ye çıkar ve uçuş kartı irtifayı barometreyle, konumu GPS ile tutar.
+
+⛔ **Kip serbestisi iniş içindir.** Yarışma komitesi, dronun düzgün uçtuğunu
+göstermek için **düz iniş sırasında istenen kipin kullanılabileceğini** bildirdi
+(kullanıcı, 2026-08-31). Görev (takip/vuruş) yine Angle modunda uçar.
+
+⛔ Ek kanallar **yalnız `kaynak == OTONOM` iken** sürülür. Pilot devraldığı an
+düşerler — ALTHOLD açıkken gaz çubuğu bir *tırmanma hızı* komutudur, kapalıyken
+*itki*; pilotun çubuğunun anlamı sessizce değişemez. Bekçi R119.
 
 ### 2.2 Talon tarafı
 
@@ -404,8 +413,9 @@ Terminalde **Ctrl+C**. ⛔ Araç havadayken kapatmayın — **önce pilot indirs
    *o tikte* düşer.
 4. **Kumanda 3 saniye kopuk kalırsa paket kesilir.** Müdahale edecek
    kimse yokken otonom devam etmez.
-5. **Yalnız Angle modu.** ALTHOLD ve POS HOLD kanallarımız 1500 µs gider,
-   yani eşiğin altında — açılmaları imkânsız.
+5. **Görevde yalnız Angle modu.** ALTHOLD / POS HOLD kanalları eşiğin altında
+   gider; yalnız **⬇ DİKEY İNİŞ** düğmesi onları açar ve pilot devralınca
+   anında düşerler (R119).
 6. **Pervaneler, yerdeki her denemede çıkarılır.**
 
 ---

@@ -45,6 +45,7 @@ from gercek.elrs import ElrsBag                         # noqa: E402
 from gercek.hedef import HedefKaynagi, UdpDinleyici     # noqa: E402
 from gercek.kayit import Kayitci                       # noqa: E402
 from gercek.rtl import Rtl                             # noqa: E402
+from gercek.dikey_inis import DikeyInis                # noqa: E402
 from gercek.kamera_yakala import Kamera, KameraCfg      # noqa: E402
 from gercek.komut import KomutSureci                    # noqa: E402
 from gercek.kumanda import Kumanda                      # noqa: E402
@@ -285,6 +286,8 @@ def main():
     #   RTL ile otonom güdüm aynı hız isteğine FARKLI çubuk üretir.
     rtl = Rtl(beyin.cev)
     PANEL._D["rtl"] = rtl
+    inis = DikeyInis()
+    PANEL._D["inis"] = inis
     print("  RTL       : hazır (irtifa %.0f m, hız %.0f m/s)"
           % (rtl.cfg.IRTIFA_M, rtl.cfg.HIZ_MS))
 
@@ -328,7 +331,31 @@ def main():
             # ⛔ RTL GÜDÜMÜN YERİNE GEÇER, yanında değil: ikisi aynı anda
             #   `otonom_yaz` çağırsaydı son yazan kazanırdı ve araç iki
             #   hedef arasında salınırdı.
-            if gb.canli():
+            # ⛔ EK KANALLAR TEK YERDE TEMİZLENİR: iniş kapalıysa uçuş
+            #   kartının kipleri de kapanmalı. Bunu dalların İÇİNE koymak,
+            #   yeni bir dal eklendiğinde atlanmasına yol açardı.
+            if not inis.aktif and ks.aux:
+                ks.aux_yaz({})
+
+            # ⛔⛔ DİKEY İNİŞ TELEMETRİYE BAĞLI DEĞİL — kasten `gb.canli()`
+            #   kapısının DIŞINDA. Sebebi: bu iniş hiçbir ölçüm kullanmaz;
+            #   yalnız iki kanalı kaldırıp gaz çubuğunu indirir, irtifayı
+            #   ve konumu uçuş kartı KENDİ barometresi/GPS'i ile tutar.
+            #   Telemetri (geri bağ) ölüp RC (ileri bağ) sağlamken indirmek
+            #   TAM DA istediğimiz şeydir; onu kapının içine koymak,
+            #   özelliği en çok gerektiği anda kapatırdı.
+            # ⛔ PİLOT ÇUBUKLA DEVRALDIYSA İNİŞ DE DURUR. Yoksa iniş
+            #   "aktif" kalır ve operatör sonra OTONOM'a bastığında araç
+            #   beklenmedik şekilde alçalmaya KALDIĞI YERDEN devam eder.
+            if inis.aktif and (ks.kip != "OTONOM" or ks.pilot_devraldi):
+                inis.dur()
+                ks.aux_yaz({})
+
+            if inis.aktif:
+                thr, pit, rol, yw = inis.adim(periyot)
+                ks.aux_yaz(inis.aux())
+                ks.otonom_yaz(thr, pit, rol, yw)
+            elif gb.canli():
                 if rtl.aktif:
                     try:
                         thr, pit, rol, yw = rtl.adim(

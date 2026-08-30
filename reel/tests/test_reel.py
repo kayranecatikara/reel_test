@@ -3806,3 +3806,374 @@ print(KAM.olcek_duzeltme(KAM.CX+250, KAM.CY))
         "farklı C demektir")
     # saçma mesafe reddedilmeli
     assert "0.5 <= a.mesafe <= 500.0" in k
+
+
+# ---------------------------------------------------------------- R118
+def test_R118_FAILSAFE_INIS_hicbir_paket_gecmez():
+    """⛔ İNİŞ KİLİDİ: kilitliyken HİÇBİR kaynak paket geçiremez.
+
+    Bu, panik düğmesinin tek vaadidir: "her ne oluyorsa olsun kes".
+    Bekçi bunu ETİKETLE değil DAVRANIŞLA sınar — kilit açıkken, üstelik
+    TÜM kaynaklar sağlıklıyken (pilot çubuğu var, panel var, güdüm taze,
+    otonom uygun) tek bir çerçeve bile yazılmamalı.
+
+    Niye "hepsi sağlıklıyken": kesme yolunun zaten çalıştığı durum
+    kaynaksızlıktır; asıl sınanması gereken, KAYNAK VARKEN de kesilmesi.
+    """
+    sp, bag, km, ks = _duzenek(throttle=0.4, pitch=0.2, roll=-0.3, yaw=0.1,
+                               arm=True, kip_anahtari=True)
+    ks.kip_sec("OTONOM")
+    ks.panel_yaz(0.5, 0.1, 0.1, 0.1, arm=True, otonom_izin=True)
+
+    # --- once NORMAL calistigini goster (kiyas cizgisi) ---
+    ks.otonom_yaz(0.6, 0.3, 0.2, 0.1)
+    ok, d = ks.tik()
+    assert ok is True, "kilit yokken paket gitmeli"
+    assert d["kaynak"] == "OTONOM"
+    n_once = len(sp.yazilan)
+    assert n_once > 0
+
+    # --- KILIDI AC ---
+    assert ks.inis_kes(True) is True
+    assert ks.inis_kilitli is True
+
+    for _ in range(200):
+        ks.otonom_yaz(0.6, 0.3, 0.2, 0.1)      # gudum TAZE
+        ks.panel_yaz(0.5, 0.1, 0.1, 0.1, arm=True, otonom_izin=True)
+        ok, d = ks.tik()
+        assert ok is False, "kilitliyken gonderildi=True dondu"
+        assert d["kaynak"] == "YOK"
+        assert d["sebep"] == "failsafe_inis"
+        assert d["inis_kilidi"] is True
+        assert d["komut"] is None, "kilitliyken cubuk sizdi"
+
+    assert len(sp.yazilan) == n_once, (
+        "KILITLIYKEN %d YENI CERCEVE YAZILDI" % (len(sp.yazilan) - n_once))
+    assert ks.sayac["kesilen"] >= 200
+
+    # --- KILIT KALKINCA yeniden calisir ---
+    ks.inis_kes(False)
+    ks.otonom_yaz(0.6, 0.3, 0.2, 0.1)
+    ks.panel_yaz(0.5, 0.1, 0.1, 0.1, arm=True, otonom_izin=True)
+    ok, d = ks.tik()
+    assert ok is True, "kilit kalkinca paket yeniden gitmeli"
+    assert len(sp.yazilan) > n_once
+    assert d["inis_kilidi"] is False
+
+
+def test_R118b_INIS_KILIDI_tikin_ILK_kapisi_yapisal():
+    """⛔ Kapı `tik()`'in BAŞINDA olmalı — sonradan eklenen bir dal onu
+    atlayamasın.
+
+    ⚠ YORUMLAR AYIKLANIR: açıklama satırlarında `rc_gonder` geçiyor ve
+      ham metinde aramak KENDİ YORUMUMU yakalıyordu (aynı hata R88,
+      R113 ve R115'te de olmuştu). Bekçi ÇALIŞAN KODA bakmalı.
+    """
+    import inspect, re
+    from gercek import komut as _k
+    ham = inspect.getsource(_k.KomutSureci.tik)
+    kod = "\n".join(re.sub(r"#.*$", "", sat) for sat in ham.splitlines())
+
+    i_kilit = kod.find("_inis_kilidi")
+    i_gonder = kod.find("rc_gonder")
+    i_hakem = kod.find("otonom_uygun")
+    assert i_kilit != -1, "tik() icinde iniş kilidi denetimi YOK"
+    assert i_gonder != -1 and i_hakem != -1
+    assert i_kilit < i_hakem, "iniş kilidi kapısı hakemden SONRA"
+    assert i_kilit < i_gonder, "iniş kilidi kapısı gonderimden SONRA"
+    kuyruk = kod[i_kilit:i_kilit + 700]
+    assert "return False" in kuyruk, "kilit dalinda erken donus yok"
+
+
+# ---------------------------------------------------------------- R119
+def test_R119_DIKEY_INIS_kanallar_ESIGI_gecer_ve_yalniz_OTONOMDA():
+    """⬇ DİKEY İNİŞ: uçuş kartının ALT HOLD + POS HOLD kiplerini açar.
+
+    ⛔ EŞİK KRİTİK: Betaflight'ta mod aralığı 1700-2100 µs. Kanal 1700'ün
+      ALTINDA kalırsa kip AÇILMAZ ve operatör "bastım, bir şey olmadı"
+      der — üstelik araç alçalmaya da başlamaz. Bu bekçi eşiği sayıyla
+      sınar, etiketle değil.
+
+    ⛔ YALNIZ OTONOM'DA: pilot çubuğa dokunup devraldığında ek kipler
+      DÜŞMELİ. ALT HOLD açıkken gaz çubuğu bir TIRMANMA HIZI komutudur,
+      kapalıyken İTKİ. Pilot, elindeki çubuğun anlamının sessizce
+      değişmiş olduğunu fark edemez.
+    """
+    from gercek import crsf as _c
+    from gercek.dikey_inis import DikeyInis, DikeyInisCfg
+
+    def _tum_kanallar(sp):
+        return _c.kanallari_coz(sp.yazilan[-1][3:25])
+
+    inis = DikeyInis()
+
+    # --- KAPALIYKEN: hiç ek kanal yok (gerileme olmasın) ---
+    assert inis.aux() == {}, "kapalıyken ek kanal sürülüyor"
+    assert inis.adim() == (0.0, 0.0, 0.0, 0.0)
+
+    sp, bag, km, ks = _duzenek(throttle=0.0, pitch=0.0, roll=0.0, yaw=0.0,
+                               arm=True, kip_anahtari=True)
+    ks.kip_sec("OTONOM")
+    ks.panel_yaz(0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=True)
+    ks.otonom_yaz(0.0, 0.0, 0.0, 0.0)
+    ok, d = ks.tik()
+    assert ok and d["kaynak"] == "OTONOM"
+    kanal_once = _tum_kanallar(sp)
+    assert d["aux"] == {}
+
+    # --- AÇIKKEN: kanal 6 ve 8 EŞİĞİN ÜSTÜNDE ---
+    inis.basla()
+    aux = inis.aux()
+    assert set(aux) == {DikeyInisCfg.ALTHOLD_KANAL, DikeyInisCfg.POSHOLD_KANAL}
+    ks.aux_yaz(aux)
+    ks.otonom_yaz(*inis.adim())
+    ks.panel_yaz(0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=True)
+    ok, d = ks.tik()
+    assert ok is True
+    k = _tum_kanallar(sp)
+    # ⚠ `kanallari_coz` HAM CRSF TİKİ döndürür, µs DEĞİL. Eşik µs
+    #   cinsindendir; çevirmeden kıyaslamak yanlış hüküm verir.
+    for kn in (DikeyInisCfg.ALTHOLD_KANAL, DikeyInisCfg.POSHOLD_KANAL):
+        us = _c.crsf_us(k[kn - 1])
+        assert us > 1700, (
+            "kanal %d = %d µs — Betaflight eşiği 1700, KİP AÇILMAZ"
+            % (kn, us))
+        assert us <= 2100, "kanal %d aralığın üstünde (%d µs)" % (kn, us)
+
+    # ⛔ GERÇEK ARAÇ SKYDAGGER YOLUNU KULLANIYOR — o eşleme de sınanır.
+    from gercek.skydagger import cubuk_us as _sky_us
+    _u = _sky_us(DikeyInisCfg.AUX_CUBUK)
+    assert 1700 < _u <= 2100, (
+        "Skydagger yolunda AUX_CUBUK=%s -> %d µs, eşiği geçmiyor"
+        % (DikeyInisCfg.AUX_CUBUK, _u))
+    # dokunulmayan kanallar DEĞİŞMEMİŞ olmalı
+    for i in range(16):
+        if (i + 1) in aux:
+            continue
+        assert k[i] == kanal_once[i], (
+            "kanal %d ek kanal olmadığı hâlde değişti" % (i + 1))
+
+    # --- OTONOM DÜŞÜNCE KİPLER DE DÜŞER ---
+    #   ⚠ BURADA ÇUBUK OYNATMAK KULLANILMAZ — ölçüldü (2026-08-31):
+    #     kumanda çubuğunu oynatmak `insan`ı "kumanda" yapar ama
+    #     `kaynak` OTONOM kalır; hakem otonomu dört şarta bakarak
+    #     seçer, hangi insanın çubuk verdiğine bakmaz. Otonomdan çıkış
+    #     PANEL MANUEL ya da PİLOT VETO ANAHTARI iledir.
+    #   İki gerçek yol da sınanır.
+    for ad, uygula in (("panel MANUEL", lambda: ks.kip_sec("MANUEL")),
+                       ("pilot vetosu", lambda: ks.panel_yaz(
+                           0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=False))):
+        ks.kip_sec("OTONOM")
+        ks.panel_yaz(0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=True)
+        ks.aux_yaz(inis.aux())
+        ks.otonom_yaz(0.0, 0.0, 0.0, 0.0)
+        assert ks.tik()[1]["kaynak"] == "OTONOM"
+        uygula()
+        ks.otonom_yaz(0.0, 0.0, 0.0, 0.0)
+        ok, d = ks.tik()
+        assert d["kaynak"] == "MANUEL", "%s otonomu düşürmedi" % ad
+    k2 = _tum_kanallar(sp)
+    for kn in (DikeyInisCfg.ALTHOLD_KANAL, DikeyInisCfg.POSHOLD_KANAL):
+        us2 = _c.crsf_us(k2[kn - 1])
+        assert us2 < 1700, (
+            "PİLOT DEVRALDI ama kanal %d hâlâ %d µs — kip açık kaldı"
+            % (kn, us2))
+    assert d["aux"] == {}
+
+
+def test_R119b_DIKEY_INIS_asamalar_ve_ARM_dokunulmazligi():
+    """⬇ TUT -> IN sırası ve yatay çubukların sıfır kalması.
+
+    ⛔ TUT aşaması KASITLI: kipler yeni açılmışken hemen alçalmaya
+      başlamak, kiplerin tuttuğunu görmeden aracı indirmektir.
+    ⛔ YATAY ÇUBUKLAR SIFIR: POS HOLD'un tuttuğu konumu çubukla bozmayalım.
+    ⛔ ARM'a DOKUNULMAZ: havada disarm = serbest düşüş (deponun kuralı).
+    """
+    import inspect
+    from gercek.dikey_inis import DikeyInis, DikeyInisCfg
+
+    d = DikeyInis()
+    d.basla()
+    thr, p, r, y = d.adim()
+    assert d.asama == "TUT"
+    assert thr == 0.0, "TUT aşamasında gaz merkezde olmalı (irtifa tut)"
+
+    # TUT bitince alçalma BAŞLAR ve hedefe RAMPAYLA iner
+    d._t0 -= (DikeyInisCfg.TUT_S + 0.01)
+    thr1, _, _, _ = d.adim()
+    assert d.asama == "IN"
+    d._t0 -= DikeyInisCfg.RAMP_S
+    thr2, p2, r2, y2 = d.adim()
+    assert thr2 < thr1 <= 0.0, "gaz çubuğu inmiyor"
+    assert abs(thr2 - DikeyInisCfg.INIS_CUBUK) < 1e-9, "hedef çubuğa oturmadı"
+    assert DikeyInisCfg.INIS_CUBUK < 0, "iniş çubuğu merkezin ALTINDA olmalı"
+
+    # yatay çubuklar HER aşamada sıfır
+    for _ in range(5):
+        _, p3, r3, y3 = d.adim()
+        assert (p3, r3, y3) == (0.0, 0.0, 0.0), "yatay çubuk POS HOLD'u bozuyor"
+
+    # ⛔ MODÜL TELE YAZAMAZ: arm dahil hiçbir kanalı kendi basamaz.
+    #   ARM'ın korunması bundan ÇIKAR — modülün elinde bağ yok, yalnız
+    #   çubuk döndürüyor. (R35 zaten `otonom_yaz`da arm alanı olmadığını
+    #   sınıyor; ikisi birlikte yolu kapatır.)
+    #   ⚠ Metinde "arm" aramak YANLIŞTI: "disarm" da eşleşiyor ve
+    #     belge satırları da yakalanıyordu.
+    src = inspect.getsource(__import__("gercek.dikey_inis",
+                                       fromlist=["x"]))
+    kod = "\n".join(sat.split("#")[0] for sat in src.splitlines())
+    for yasak in ("rc_gonder", "kanal_yaz", "otonom_yaz", "bag."):
+        assert yasak not in kod, (
+            "iniş modülü doğrudan tele yazıyor: %s" % yasak)
+    import inspect as _i2
+    from gercek.dikey_inis import DikeyInis as _DI
+    p_adim = _i2.signature(_DI.adim).parameters
+    assert "arm" not in p_adim, "adim() arm alıyor"
+
+    d.dur()
+    assert d.aux() == {}, "durdurulunca ek kanallar temizlenmedi"
+
+
+# ---------------------------------------------------------------- R120
+def test_R120_PILOT_CUBUKLA_DEVRALIR_mandalli_ve_ANAHTARDAN_bagimsiz():
+    """⛔ Pilot çubuğa dokununca güdüm DURUR ve kendiliğinden GERİ GELMEZ.
+
+    Kullanıcı kararı (2026-08-31): *"kumanda çubuğu oynatıldığı anda eğer
+    güdüm algoritmaları çalışıyorsa o pipeline durdurulup kontrol manuele
+    geçsin."*
+
+    ⛔ ÖNCEDEN ÇALIŞMIYORDU (ölçüldü 2026-08-31): çubuk oynatmak yalnız
+      `insan` alanını "kumanda" yapıyor, `kaynak` OTONOM kalıyordu — araç
+      güdümle uçmaya devam ediyordu. `UCUS_KARTI.md` "çubuk oynat, 3 s
+      hâkimiyet alır" diyordu; YANLIŞTI.
+
+    ⛔ ÜÇ AYRI ÖZELLİK SINANIR:
+      1. çubuk hareketi otonomu düşürür  ve  `sebep` bunu SÖYLER
+      2. MANDALLI: hâkimiyet süresi geçince otonom kendiliğinden DÖNMEZ
+      3. ANAHTARDAN BAĞIMSIZ: veto anahtarını çevirmek mandalı TETİKLEMEZ
+         (yoksa veto kullanmak otonomu kalıcı öldürürdü — R53 yakalamıştı)
+    """
+    import time as _t
+
+    # --- 1 + 2: çubuk devralır ve MANDALLANIR ---
+    sp, bag, km, ks = _duzenek(throttle=0.0, pitch=0.0, roll=0.0, yaw=0.0,
+                               arm=True, kip_anahtari=None)
+    ks.kip_sec("OTONOM")
+
+    def _tik():
+        ks.panel_yaz(0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=True)
+        ks.otonom_yaz(0.1, 0.1, 0.1, 0.1)
+        return ks.tik()[1]
+
+    assert _tik()["kaynak"] == "OTONOM"
+    assert ks.pilot_devraldi is False
+
+    km.c = Cubuklar(throttle=0.5, pitch=0.5, roll=-0.5, yaw=0.5,
+                    arm=True, kip_anahtari=None)
+    d = _tik()
+    assert d["kaynak"] == "MANUEL", "çubuk oynadı ama güdüm sürüyor"
+    assert d["sebep"] == "pilot_devraldi", (
+        "devralmanın sebebi panelde görünmüyor: %s" % d["sebep"])
+    assert ks.pilot_devraldi is True
+    # ⛔ KİP OPERATÖRÜN SEÇİMİDİR — devralma onu EZMEZ (R36/R67 sözleşmesi)
+    assert ks.kip == "OTONOM", "devralma operatörün kip seçimini ezdi"
+
+    # hâkimiyet süresi GEÇSE BİLE otonom dönmez
+    _t.sleep(ks.cfg.KMD_HAKIMIYET_S + 0.4)
+    d = _tik()
+    assert d["kaynak"] == "MANUEL", (
+        "hâkimiyet süresi geçince otonom KENDİLİĞİNDEN geri geldi — "
+        "kontrolü kapan pilot aracın yeniden kendi uçtuğunu görürdü")
+
+    # yalnız panelden OTONOM temizler
+    ks.kip_sec("OTONOM")
+    assert ks.pilot_devraldi is False
+    assert _tik()["kaynak"] == "OTONOM"
+
+    # --- 3: VETO ANAHTARI mandalı TETİKLEMEZ ---
+    sp2, bag2, km2, ks2 = _duzenek(throttle=0.0, pitch=0.0, roll=0.0, yaw=0.0,
+                                   arm=True, kip_anahtari=True)
+    ks2.kip_sec("OTONOM")
+
+    def _tik2():
+        ks2.panel_yaz(0.0, 0.0, 0.0, 0.0, arm=True, otonom_izin=True)
+        ks2.otonom_yaz(0.1, 0.1, 0.1, 0.1)
+        return ks2.tik()[1]
+
+    assert _tik2()["kaynak"] == "OTONOM"
+    km2.c.kip_anahtari = False
+    d = _tik2()
+    assert d["kaynak"] == "MANUEL" and d["sebep"] == "pilot_vetosu"
+    assert ks2.pilot_devraldi is False, "veto anahtarı devralma mandalını tetikledi"
+    km2.c.kip_anahtari = True
+    assert _tik2()["kaynak"] == "OTONOM", (
+        "veto geri açıldı ama otonom dönmedi — anahtar kullanmak "
+        "cezalandırılıyor")
+
+
+# ---------------------------------------------------------------- R121
+def test_R121_INIS_CUBUGU_ALTHOLD_OLU_BANDININ_DISINDA():
+    """⛔ İniş gaz çubuğu, ALT HOLD'un ÖLÜ BANDININ dışında olmalı.
+
+    Betaflight'ta ALT HOLD açıkken gaz çubuğu merkez civarında ölü
+    banttadır ve HİÇBİR komut üretmez — araç irtifasını korur, alçalmaz.
+    Aracın `diff all` çıktısında `alt_hold_deadband` YOK, yani VARSAYILAN
+    (%20). İlk seçtiğim -0.20 tam bu sınıra denk geliyordu (102 µs = %19.9)
+    ve araç büyük ihtimalle hiç alçalmayacaktı.
+
+    ⛔ Bu bekçi SESSİZ ARIZAYA karşıdır: değer bandın içine düşerse
+      "iniş başladı" yazar, kanallar açılır, gaz iner ve ARAÇ HİÇBİR ŞEY
+      YAPMAZ. Operatör inişin sürdüğünü sanır.
+    """
+    from gercek.dikey_inis import DikeyInisCfg
+    from gercek.skydagger import cubuk_us, US_MIN, US_ORTA
+
+    OLU_BANT_YUZDE = 20.0        # Betaflight varsayılanı
+    PAY = 5.0                    # sınıra yapışmasın
+
+    x = DikeyInisCfg.INIS_CUBUK
+    assert x < 0, "iniş çubuğu merkezin ALTINDA olmalı"
+    us = cubuk_us(x)
+    yuzde = 100.0 * (US_ORTA - us) / (US_ORTA - US_MIN)
+    assert yuzde > OLU_BANT_YUZDE + PAY, (
+        "iniş çubuğu %.2f -> %d µs = merkezden %%%.1f. ALT HOLD ölü bandı "
+        "%%%.0f; araç ALÇALMAZ ama panel 'iniyor' yazar."
+        % (x, us, yuzde, OLU_BANT_YUZDE))
+    # üst sınır: sert iniş olmasın
+    assert yuzde < 60.0, (
+        "iniş çubuğu %%%.1f — çok agresif, sert iniş riski" % yuzde)
+
+    # AUX kanalları da eşiğin üstünde kalmalı (Betaflight aralığı 1700-2100)
+    for kn in (DikeyInisCfg.ALTHOLD_KANAL, DikeyInisCfg.POSHOLD_KANAL):
+        assert 1700 < cubuk_us(DikeyInisCfg.AUX_CUBUK) <= 2100
+    # araçtan doğrulandı: ALTHOLD AUX2 = kanal 6, POS HOLD AUX4 = kanal 8
+    assert DikeyInisCfg.ALTHOLD_KANAL == 6
+    assert DikeyInisCfg.POSHOLD_KANAL == 8
+
+    # --- ölü bant değeri ARAÇTAN okundu: alt_hold_deadband = 20 ---
+    assert abs(DikeyInisCfg.OLU_BANT - 0.20) < 1e-9, (
+        "ölü bant araçtan okunan %20 ile uyuşmuyor")
+
+    # --- RAMPA ÖLÜ BANDIN KENARINDAN BAŞLAR ---
+    #   Sıfırdan başlasaydı rampanın ilk %57'si bandın içinde geçer,
+    #   araç saniyelerce hiçbir şey yapmaz, sonra alçalma ANİ başlardı.
+    import time as _t2
+    from gercek.dikey_inis import DikeyInis as _DI2
+    di = _DI2()
+    di.basla()
+    di._t0 = _t2.monotonic() - (DikeyInisCfg.TUT_S + 0.001)
+    bas_thr = di.adim()[0]
+    assert abs(bas_thr + DikeyInisCfg.OLU_BANT) < 0.02, (
+        "rampa ölü bandın kenarından değil %.3f'ten başlıyor" % bas_thr)
+    # rampa boyunca TEKDÜZE iner ve hedefte DURUR (sabit hız)
+    onceki = bas_thr
+    for k in range(1, 11):
+        di._t0 = _t2.monotonic() - (DikeyInisCfg.TUT_S
+                                    + DikeyInisCfg.RAMP_S * k / 10.0)
+        simdi = di.adim()[0]
+        assert simdi <= onceki + 1e-9, "rampa geri dönüyor"
+        onceki = simdi
+    assert abs(onceki - DikeyInisCfg.INIS_CUBUK) < 1e-6
+    di._t0 = _t2.monotonic() - (DikeyInisCfg.TUT_S + DikeyInisCfg.RAMP_S * 10)
+    assert abs(di.adim()[0] - DikeyInisCfg.INIS_CUBUK) < 1e-9, (
+        "rampa bitince çubuk SABİT kalmalı — iniş sabit hızda olmalı")

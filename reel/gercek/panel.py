@@ -193,6 +193,9 @@ def _durum():
                     "uzaklik": round((mx * mx + my * my) ** 0.5, 1)}
         except Exception:
             pass
+    _in = _D.get("inis")
+    if _in is not None:
+        d["inis"] = _in.durum()
     if sv is not None:
         d["sunucu"] = sv.durum()
     if dk is not None:
@@ -338,6 +341,20 @@ button{flex:1;min-width:78px;padding:9px 6px;border:1px solid #2a3550;border-rad
 button:hover{background:#243049}
 button.aktif{background:#1d4ed8;border-color:#60a5fa;color:#fff}
 button.arm{background:#7f1d1d;border-color:#ef4444}
+/* ⛔ ACİL İNİŞ — kasten BÜYÜK, kasten AYRI SATIRDA, kasten farklı renk.
+   Yanına başka düğme konmaz: panik anında yanlış düğmeye basmak
+   düğmenin varlık sebebini yok eder. */
+/* son çare — kasten KÜÇÜK ve sönük: birincil yol dikey iniştir. */
+button.kucukacil{background:#3f1414;border-color:#7f1d1d;color:#fca5a5;
+  font-size:10px;padding:5px;width:100%;letter-spacing:0}
+button.kucukacil:hover{background:#5b1a1a}
+button.kucukacil.aktif{background:#7f1d1d;color:#fff;border-color:#ef4444}
+button.acil{background:#b91c1c;border-color:#fca5a5;color:#fff;
+  font-weight:700;letter-spacing:.5px;padding:12px;width:100%;font-size:14px}
+button.acil:hover{background:#dc2626}
+button.acil.aktif{background:#450a0a;border-color:#f87171;
+  animation:acilyanip 1s steps(2,end) infinite}
+@keyframes acilyanip{50%{background:#7f1d1d}}
 button.armli{background:#166534;border-color:#4ade80}
 .uyarilar{margin-top:8px;font-size:11px;color:#ffd166;min-height:16px}
 #uc3b{width:100%;height:260px;display:block;background:#080b10;border-radius:6px;
@@ -352,6 +369,7 @@ button.armli{background:#166534;border-color:#4ade80}
   <span id=r_kip  class="rozet uyari">MANUEL</span>
   <span id=r_insan class="rozet uyari">girdi: —</span>
   <span id=r_arm  class="rozet kotu">DISARM</span>
+  <span id=r_inis class="rozet" hidden>⛔ İNİŞ — PAKET KESİLDİ</span>
   <span id=r_sunucu class="rozet kotu">SUNUCU</span>
   <span style="flex:1"></span>
   <span id=r_saat class=sonuk></span>
@@ -378,6 +396,13 @@ button.armli{background:#166534;border-color:#4ade80}
         <button id=b_otonom>OTONOM</button>
         <button id=b_rtl class=rtl>RTL — EVE DÖN</button>
         <button id=b_arm class=arm>ARM (BASILI TUT)</button>
+      </div>
+      <div class=dugmeler style="margin-top:6px">
+        <button id=b_inis class=acil>⛔ FAILSAFE — DİKEY İNİŞ</button>
+      </div>
+      <div class=dugmeler style="margin-top:2px">
+        <button id=b_kes class=kucukacil>son çare: RC paketini kes
+          (kartın kendi AUTO-LAND'i)</button>
       </div>
       <div class=dugmeler>
         <button id=b_koken>KÖKEN KUR</button>
@@ -495,6 +520,39 @@ const yerR=pad(document.getElementById("padR"),document.getElementById("topuzR")
 
 document.getElementById("b_manuel").onclick=()=>kip("MANUEL");
 document.getElementById("b_otonom").onclick=()=>kip("OTONOM");
+// ⛔⛔ FAILSAFE = DİKEY İNİŞ (kullanıcı kararı 2026-08-31).
+//   Nerede olursak olalım — güdüm sürerken de, pilot elle uçarken de —
+//   bu düğme görevi keser ve uçuş kartının ALT HOLD + POS HOLD kipleriyle
+//   olduğu yerde aşağı iner.
+//   ONAY SORMAZ: acil durumda bir tık daha istemek düğmenin varlık
+//   sebebini yok eder. Yanlışlıkla basmaya karşı korumamız KONUM ve
+//   GÖRÜNÜM (kendi satırı, büyük, kırmızı).
+document.getElementById("b_inis").onclick=async()=>{
+  const acik=document.getElementById("b_inis").classList.contains("aktif");
+  if(acik){
+    if(!confirm("DİKEY İNİŞ DURDURULSUN MU?\n\n"+
+                "Araç alçalmayı bırakır, ALT HOLD / POS HOLD kapanır\n"+
+                "ve kontrol sana döner. Emin misin?")) return;
+    await post("/api/dikey_inis",{ac:false}); return;
+  }
+  const r=await post("/api/dikey_inis",{ac:true});
+  if(!r.ok) alert("iniş başlamadı: "+(r.sebep||"?"));
+};
+// ⛔ SON ÇARE — RC paketini komple kes. Dikey iniş uçuş kartının
+//   kiplerine güvenir; o kipler beklendiği gibi davranmazsa (ör. araç
+//   alçalacağına tırmanıyorsa) bu düğme bizi devreden tamamen çıkarır
+//   ve kartın KENDİ failsafe AUTO-LAND'ine bırakır.
+//   Kasten KÜÇÜK: birincil acil yol dikey iniştir.
+document.getElementById("b_kes").onclick=async()=>{
+  const acik=document.getElementById("b_kes").classList.contains("aktif");
+  if(acik){
+    if(!confirm("PAKET KESME KALDIRILSIN MI?\n\n"+
+                "⚠ Bu aracı kurtarmaz: uçuş kartı failsafe'ten çıkmayabilir.\n"+
+                "Yine de kaldırılsın mı?")) return;
+    await post("/api/inis",{ac:false}); return;
+  }
+  await post("/api/inis",{ac:true});
+};
 // ⛔ RTL ONAY İSTER: aracı otonom olarak eve uçurur. Yanlışlıkla
 //   basılırsa uçak elinden çıkar.
 document.getElementById("b_rtl").onclick=async()=>{
@@ -799,6 +857,29 @@ function gosterim(d){
   rozet("r_kip",  k.kip=="OTONOM"?null:true, k.kip||"—");
   rozet("r_insan", k.insan?true:false, "girdi: "+(k.insan||"YOK"));
   rozet("r_arm",  !!k.arm, k.arm?"ARM":"DISARM");
+  // ⛔ İNİŞ KİLİDİ — panelde SESSİZ kalamaz: operatör niye komut
+  //   gitmediğini görmeden anlayamaz.
+  const di = d.inis||{};
+  const inisK = (k.inis_kilidi===true);
+  const bInis=document.getElementById("b_inis");
+  bInis.classList.toggle("aktif", di.aktif===true);
+  bInis.textContent = di.aktif
+    ? ("⬇ İNİYOR — "+(di.asama||"")+"   gaz "+(di.gaz_cubugu??0).toFixed(2)+
+       "   ("+(di.gecen_s??0)+" s)  · durdurmak için bas")
+    : "⛔ FAILSAFE — DİKEY İNİŞ";
+  const bKes=document.getElementById("b_kes");
+  bKes.classList.toggle("aktif", inisK);
+  bKes.textContent = inisK
+    ? "⛔ PAKET KESİLDİ — kart AUTO-LAND yapıyor (kaldırmak için bas)"
+    : "son çare: RC paketini kes (kartın kendi AUTO-LAND'i)";
+  const rInis=document.getElementById("r_inis");
+  rInis.hidden = !(inisK || di.aktif===true);
+  rInis.className = "rozet kotu";
+  rInis.textContent = inisK ? "⛔ PAKET KESİLDİ" : "⬇ DİKEY İNİŞ";
+  // ⛔ PİLOT ÇUBUKLA DEVRALDI — operatör bunu GÖRMELİ, yoksa panelde
+  //   OTONOM yazarken aracın niye güdümle uçmadığını anlayamaz.
+  if(k.pilot_devraldi===true)
+    document.getElementById("b_otonom").classList.add("uyari");
   rozet("r_sunucu", sv.baglandi===true, "SUNUCU "+(sv.gonderilen||0));
   // ⛔ GÜVENLİ PENCERE (Skydagger rehberi §8): ilk saniyelerde YALNIZ SAFE
   //    basılır. Operatör bunu GÖRMELİ, yoksa "komut gitmiyor" sanır.
@@ -858,6 +939,12 @@ function gosterim(d){
     sat("çubuk T/P/R/Y",(k.komut
         ?k.komut.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("  ")
         :"—"))+
+    sat("dikey iniş",(di.aktif
+        ?('<b class=orta>'+di.asama+'</b>  gaz çubuğu '+
+          (di.gaz_cubugu??0).toFixed(2)+" / hedef "+(di.hedef_cubuk??0)+
+          "   kanal "+(di.kanallar||[]).join(",")+
+          "  <span class=sonuk>ALT HOLD + POS HOLD</span>")
+        :"kapalı"))+
     sat("güdüm",(g.durum||"—")+" / "+(g.faz||"—"))+
     sat("kuzey / doğu",(ko.kuzey??"—")+" / "+(ko.dogu??"—")+" m")+
     sat("yükseklik",(ko.yukari??"—")+" m")+
@@ -961,6 +1048,14 @@ function gosterim(d){
     (d.dikey?sat("dikey döngü",(d.dikey.aktif?"aktif":"pasif")+
         "  (pasif çağrı "+(d.dikey.pasif||0)+")"):"");
   let u=[];
+  if(k.pilot_devraldi===true && k.kip!="OTONOM")
+    u.push("ℹ PİLOT ÇUBUKLA DEVRALDI — güdüm durduruldu. Otonoma dönmek "+
+           "için panelde OTONOM'a bas.");
+  if(di.aktif===true) u.push("⬇ DİKEY İNİŞ SÜRÜYOR ("+di.asama+
+      ") — görev kesildi, araç alçalıyor. Yere değince DISARM et; "+
+      "kendiliğinden disarm ETMEZ.");
+  if(k.inis_kilidi===true) u.push("⛔⛔ İNİŞ KİLİDİ ETKİN — RC PAKETİ GÖNDERİLMİYOR. "+
+      "Araç alıcı failsafe'inde: Betaflight AUTO-LAND. Çubuklar GİTMİYOR.");
   if(a.canli===false) u.push("⛔ TELEMETRİ AKMIYOR");
   if(a.koken===false) u.push("⚠ yerel köken kurulmadı (GPS fix bekleniyor)");
   if(k.sebep=="teslim_suresi") u.push("⛔ KUMANDA KOPUK — paket kesildi, AUTO-LAND");
@@ -1045,6 +1140,49 @@ class _Islem(BaseHTTPRequestHandler):
             if yeni_kip != "OTONOM" and _D.get("rtl") is not None:
                 _D["rtl"].dur()
             return self._yaz(200, "application/json", b'{"ok":1}')
+        if self.path == "/api/dikey_inis":
+            _in = _D.get("inis")
+            if _in is None or ks is None:
+                return self._yaz(200, "application/json",
+                                 b'{"ok":0,"sebep":"inis kurulu degil"}')
+            if not g.get("ac"):
+                _in.dur()
+                ks.aux_yaz({})
+                return self._yaz(200, "application/json", b'{"ok":1}')
+            r = _D.get("rtl")
+            if r is not None:
+                try:
+                    r.dur()          # tek kaynak: eve dönüş varsa durur
+                except Exception:
+                    pass
+            ok = _in.basla()
+            # ⛔ Hakemin dört şartı AYNEN geçerli; kipi biz seçiyoruz ki
+            #   operatör iki düğmeye basmak zorunda kalmasın.
+            if ok:
+                try:
+                    ks.kip_sec("OTONOM")
+                except ValueError:
+                    pass
+            return self._yaz(200, "application/json", json.dumps(
+                {"ok": bool(ok), "sebep": _in.sebep}).encode())
+        if self.path == "/api/inis":
+            # ⛔ FAILSAFE İNİŞ — paketleri kes. RTL de kapatılır: nothing
+            #   gönderilmediği için zararsızdır ama panelde "RTL sürüyor"
+            #   yazması operatörü yanıltır.
+            if ks is None:
+                return self._yaz(200, "application/json",
+                                 b'{"ok":0,"sebep":"komut sureci yok"}')
+            ac = bool(g.get("ac"))
+            ks.inis_kes(ac)
+            if ac:
+                r = _D.get("rtl")
+                if r is not None:
+                    try:
+                        r.dur()
+                    except Exception:
+                        pass
+            return self._yaz(200, "application/json", json.dumps(
+                {"ok": 1, "kilitli": ks.inis_kilitli}).encode())
         if self.path == "/api/rtl":
             r = _D.get("rtl")
             if r is None:

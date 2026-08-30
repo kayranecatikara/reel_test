@@ -739,7 +739,7 @@ setInterval(async()=>{
     sat("GPS",(FIX[d.fix]||"—")+"  ·  "+(d.uydu??"—")+" uydu")+
     sat("pil",(d.pil_v!=null?d.pil_v.toFixed(2)+" V":"—")+
         (d.pil_yuzde!=null?("  ·  "+d.pil_yuzde+"%"):""))+
-    sat("irtifa",n1(d.irtifa," m"))+
+    sat("irtifa (AMSL)",n1(d.irtifa," m"))+
     sat("hız",n1(d.hiz," m/s")+(d.hava_hizi!=null
         ?('  <span style="color:#7d8aa0">hava '+d.hava_hizi.toFixed(1)+'</span>'):""))+
     sat("tırmanış",n1(d.tirmanis," m/s"))+

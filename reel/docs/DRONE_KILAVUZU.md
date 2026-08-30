@@ -29,7 +29,8 @@ cd ~/projects/drones_of_war_entegrasyon/reel
 | Elle uçurmak | Paneldeki iki joystick, ya da USB kumanda |
 | Otonom güdüme geçmek | **OTONOM** düğmesi + pilot izin anahtarı |
 | Kamerayı kalibre etmek | `python3 gercek/kamera_ayari.py` → :8020 |
-| Acil durdurmak | **MANUEL**'e bas, ya da kumandadan çubuk oynat |
+| Acil durdurmak | Kumandadan **çubuk oynat** (anında, mandallı) · panelde **MANUEL** |
+| Acil İNDİRMEK | Panelde **⛔ FAILSAFE — DİKEY İNİŞ** — olduğu yerde aşağı iner |
 
 ---
 
@@ -501,7 +502,8 @@ Bir bekçi (`tests/test_bbox_ibvs.py` B5) bunu sınar.
 13. **İniş:** MANUEL'e al, elle indir, **DISARM**
 
 **Otonomdan çıkmanın iki yolu:** panelde **MANUEL**, ya da **kumandada
-çubuk oynatmak** (3 saniye hâkimiyet).
+çubuk oynatmak** — güdüm o tikte durur ve **kendiliğinden geri gelmez**
+(mandallı, ölçüldü 2026-08-31). Otonoma dönüş yalnız panelden **OTONOM**.
 
 ---
 
@@ -510,7 +512,7 @@ Bir bekçi (`tests/test_bbox_ibvs.py` B5) bunu sınar.
 | durum | ne yap |
 |---|---|
 | Araç hedeften **kaçıyor** | MANUEL. Sonra `DOW_CEV_Y_ISARET=-1.0` ile yeniden dene |
-| Otonom tuhaf davranıyor | Kumandada çubuk oynat — 3 s hâkimiyet alır |
+| Otonom tuhaf davranıyor | Kumandada çubuk oynat — güdüm anında durur (mandallı) |
 | Panel dondu | Kumanda zaten önceliklidir; kumandayla uçur |
 | ELRS koptu | ESP32 son çerçeveyi ~200 ms tutar, sonra failsafe |
 | Görüntü kesildi | Faz İSTASYON'a düşer, GPS ile devam eder |

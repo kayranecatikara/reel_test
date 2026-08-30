@@ -137,7 +137,9 @@ Talon rotasına ve irtifasına otursun. **Drone'u erken kaldırma.**
 
 ### 3 · Otonomdan çıkış — iki yol
 - Panelde **MANUEL**
-- Kumandada **çubuk oynat** (3 s hâkimiyet alır)
+- Kumandada **çubuk oynat** — güdüm ANINDA durur ve **geri gelmez**
+  (mandallı; otonoma dönmek için panelden yeniden **OTONOM**'a bas)
+- Panelde **⛔ FAILSAFE — DİKEY İNİŞ** (olduğu yerde aşağı iner)
 
 ### 4 · İniş
 - **Drone:** MANUEL → elle indir → **DISARM**
