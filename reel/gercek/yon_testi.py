@@ -31,9 +31,23 @@ YÖN İŞARETİ TESTİ — güdüm hatayı KAPATIYOR mu, BÜYÜTÜYOR mu (YERDE,
    · hedef akışı taze (Talon açık)
    · en az ÜÇ farklı burun yönü (dördü daha iyi)
 
+İKİ KİP:
+  --mod cevir  (varsayılan) : ARACI çevirirsin, hedef sabit. Dünya
+      çerçevesindeki komut yönü değişmemeli. İşaret hatasını en kesin
+      yakalayan sınama budur.
+  --mod hedef : ARAÇ SABİT durur, HEDEF hareket eder. Komutun hedefe
+      DOĞRU dönüp dönmediğini doğrudan gösterir — "hedefi sağa götürdüm,
+      çubuk sağa gitti mi".
+
+⚠ `hedef` kipinde beklenen yön, hedefin KENDİSİ değil hedefin ~8 m
+  arkasındaki İSTASYON NOKTASIdır (güdüm oraya gider). Hedef 30 m'den
+  uzaktayken ikisi arasındaki fark ~15°'nin altındadır, işaret sınaması
+  için yeterlidir; yakın mesafede açı bozulur, o yüzden UZAK TUT.
+
 Kullanım:
-    python3 gercek/yon_testi.py              # 90 s toplar
-    python3 gercek/yon_testi.py --sure 120
+    python3 gercek/yon_testi.py                    # aracı çevir
+    python3 gercek/yon_testi.py --mod hedef        # hedefi gezdir
+    python3 gercek/yon_testi.py --mod hedef --sure 120
 """
 import argparse
 import json
@@ -85,14 +99,22 @@ def main():
     a = argparse.ArgumentParser(description="Yön işareti testi (yerde)")
     a.add_argument("--sure", type=float, default=90.0, help="toplama süresi (s)")
     a.add_argument("--panel", default=PANEL)
+    a.add_argument("--mod", choices=("cevir", "hedef"), default="cevir",
+                   help="cevir: aracı döndür · hedef: hedefi gezdir")
     a = a.parse_args()
 
     print("=" * 70)
     print("  YÖN İŞARETİ TESTİ — pervanesiz, DISARM, panelde OTONOM")
     print("=" * 70)
     print("  ⛔ PERVANELER ÇIKARILI olduğunu doğrula.")
-    print("  Aracı elinde tut ve YAVAŞÇA çevir: her yönde ~10 s bekle,")
-    print("  en az DÖRT yön göster (kuzey, doğu, güney, batı gibi).")
+    if a.mod == "cevir":
+        print("  Aracı elinde tut ve YAVAŞÇA çevir: her yönde ~10 s bekle,")
+        print("  en az DÖRT yön göster (kuzey, doğu, güney, batı gibi).")
+    else:
+        print("  ⛔ DRONE'U YERE SABİT BIRAK, hiç oynatma.")
+        print("  HEDEFİ (Talon'u) drone'un ETRAFINDA gezdir — en az")
+        print("  30 m uzakta tut ve dört yöne götür (kuzey/doğu/güney/batı).")
+        print("  Her noktada ~10 s bekle.")
     print()
 
     # ---- OTONOM'a geçilmesini bekle ----
@@ -167,6 +189,10 @@ def main():
                      ("   hedef %5.1f°" % hedef_kert) if hedef_kert else ""))
         time.sleep(0.3)
 
+    # ---- HEDEF KİPİ: beklenen yön ile gerçek yönü kıyasla ----
+    if a.mod == "hedef":
+        return _hedef_degerlendir(ornek, doyum, kucuk)
+
     # ---- değerlendirme ----
     print()
     print("=" * 70)
@@ -234,6 +260,72 @@ def main():
         print("     Sebebi genelde: çubuklar doyumda, ya da burun yönleri")
         print("     birbirine çok yakın. Aracı DÖRT belirgin yöne çevirip")
         print("     her yönde 10 s bekleyerek tekrarla.")
+    print("=" * 70)
+    return 0
+
+
+def _hedef_degerlendir(ornek, doyum, kucuk):
+    """HEDEF kipi: komutun GÖVDE çerçevesindeki yönü, hedefin gövde
+    çerçevesindeki yönüyle uyuşuyor mu.
+
+    Gövdede çalışırız çünkü hata TAM ORADA doğar: dünya→gövde dönüşümü.
+    Beklenen açı  = hedef_kerterizi − burun_yönü
+    Gerçek açı    = atan2(roll, pitch)      (+pitch ileri, +roll sağ)
+    """
+    print()
+    print("=" * 70)
+    kul = [(y, p, r, hk) for (y, p, r, hk) in ornek if hk is not None]
+    if len(kul) < 8:
+        print("  ⛔ YETERLİ ÖRNEK YOK (%d). Hedefin konumu panelde görünüyor"
+              " mu?\n     · köken kuruldu mu\n     · hedef akışı taze mi"
+              % len(kul))
+        return 1
+
+    h0, h1 = [], []
+    print("   burun   hedef   BEKLENEN  GERÇEK(H0)  fark   GERÇEK(H1)  fark")
+    print("  " + "-" * 68)
+    yaz = 0
+    for yaw, p, r, hk in kul:
+        beklenen = _yon_farki(hk, yaw)                  # gövdede hedef yönü
+        gercek0 = math.degrees(math.atan2(r, p))
+        gercek1 = math.degrees(math.atan2(-r, p))
+        f0 = _yon_farki(gercek0, beklenen)
+        f1 = _yon_farki(gercek1, beklenen)
+        h0.append(f0)
+        h1.append(f1)
+        if yaz < 12:
+            yaz += 1
+            print("   %6.1f  %6.1f   %7.1f   %8.1f  %+6.1f   %8.1f  %+6.1f"
+                  % (yaw, hk, beklenen, gercek0, f0, gercek1, f1))
+
+    _, R0 = _dairesel(h0)
+    _, R1 = _dairesel(h1)
+    o0, _ = _dairesel(h0)
+    o1, _ = _dairesel(h1)
+    print()
+    print("  ORTALAMA SAPMA   H0 (işaret doğru): %6.1f°   toplanma %.3f"
+          % (_yon_farki(o0, 0.0), R0))
+    print("  ORTALAMA SAPMA   H1 (işaret ters) : %6.1f°   toplanma %.3f"
+          % (_yon_farki(o1, 0.0), R1))
+    if doyum:
+        print("  ⚠ %d örnekte çubuk DOYUMDA (±1.00) — açı kırpılmış" % doyum)
+    if kucuk:
+        print("  ℹ %d örnek çok küçük çubuk olduğu için atlandı" % kucuk)
+    print()
+
+    s0 = abs(_yon_farki(o0, 0.0))
+    s1 = abs(_yon_farki(o1, 0.0))
+    if s0 < 40.0 and s0 < s1:
+        print("  ✔✔ SONUÇ: ÇUBUKLAR HEDEFE DOĞRU  (DOW_CEV_Y_ISARET=+1.0)")
+        print("     Ortalama sapma %.0f° — güdüm hatayı KAPATIYOR." % s0)
+    elif s1 < 40.0 and s1 < s0:
+        print("  ⛔⛔ SONUÇ: YANAL KANAL TERS — UÇURMA.")
+        print("     İşaret çevrilince sapma %.0f°'ye düşüyor." % s1)
+        print("     Çare:  DOW_CEV_Y_ISARET=-1.0 ./baslat_drone.sh --gorsel")
+    else:
+        print("  ⚠ AYIRT EDİLEMEDİ (H0 %.0f°, H1 %.0f°)." % (s0, s1))
+        print("     Sebebi genelde: hedef ÇOK YAKIN (istasyon ofseti açıyı")
+        print("     bozar) ya da çubuklar doyumda. Hedefi 30-50 m'ye götür.")
     print("=" * 70)
     return 0
 
