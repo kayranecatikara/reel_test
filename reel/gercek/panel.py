@@ -831,6 +831,11 @@ function gosterim(d){
 
   document.getElementById("telem_ucus").innerHTML=
     sat("kaynak",(k.kaynak||"—")+(k.sebep&&k.sebep!="-"?" ("+k.sebep+")":""))+
+    // ⭐ GİDEN ÇUBUKLAR — araca GERÇEKTEN ne gönderiliyor. Tezgâhta
+    //   "güdüm komut üretiyor mu" sorusunun tek doğrudan cevabı budur.
+    sat("çubuk T/P/R/Y",(k.komut
+        ?k.komut.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("  ")
+        :"—"))+
     sat("güdüm",(g.durum||"—")+" / "+(g.faz||"—"))+
     sat("kuzey / doğu",(ko.kuzey??"—")+" / "+(ko.dogu??"—")+" m")+
     sat("yükseklik",(ko.yukari??"—")+" m")+

@@ -94,6 +94,14 @@ SUTUNLAR = [
     # --- kamera ---
     ("kam_sayac",      "kamera.sayac"),
     ("kam_yas",        "kamera.yas"),
+    # --- ⭐ ARACA GİDEN ÇUBUKLAR (30 Ağu 2026 eklendi, SONA) ---
+    #   ⛔ Bunlar olmadan kayıt "araç ne yaptı" sorusunu CEVAPLAYAMAZ:
+    #   konum ve duruş sonucu gösterir, sebebi göstermez.
+    ("cubuk_thr",      "komut.komut.0"),
+    ("cubuk_pitch",    "komut.komut.1"),
+    ("cubuk_roll",     "komut.komut.2"),
+    ("cubuk_yaw",      "komut.komut.3"),
+    ("mercek",         "optik.mercek"),
 ]
 
 
