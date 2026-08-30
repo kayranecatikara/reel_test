@@ -43,6 +43,7 @@ from gercek.baglanti import GercekBaglanti              # noqa: E402
 from gercek.dikey import DikeyDongu                     # noqa: E402
 from gercek.elrs import ElrsBag                         # noqa: E402
 from gercek.hedef import HedefKaynagi, UdpDinleyici     # noqa: E402
+from gercek.kayit import Kayitci                       # noqa: E402
 from gercek.kamera_yakala import Kamera, KameraCfg      # noqa: E402
 from gercek.komut import KomutSureci                    # noqa: E402
 from gercek.kumanda import Kumanda                      # noqa: E402
@@ -68,6 +69,10 @@ def _arg():
     a.add_argument("--port", type=int, default=8810, help="panel portu")
     a.add_argument("--gorsel", action="store_true",
                    help="YOLO + görsel güdümü aç (model gerekir)")
+    a.add_argument("--kayit-yok", action="store_true",
+                   help="uçuş kaydını KAPAT (varsayılan: açık)")
+    a.add_argument("--kayit-hz", type=float, default=10.0,
+                   help="uçuş kaydı satır hızı (varsayılan 10 Hz)")
     a.add_argument("--sunucu", default="", help="yarışma sunucusu adresi")
     a.add_argument("--hz", type=float, default=50.0, help="güdüm döngü hızı")
     a.add_argument("--sahte", action="store_true",
@@ -181,6 +186,7 @@ def main():
     from dow.gudum.cevirici import HizCubukCevirici, CevCfg
     Ayar.GPS_KAYNAK = "gercek"          # ⛔ truth/filtre GERÇEKTE YOK
     Ayar.GORSEL_AKTIF = bool(a.gorsel)
+    PANEL._D["gorsel_aktif"] = bool(a.gorsel)
 
     det = None
     if a.gorsel:
@@ -207,8 +213,14 @@ def main():
         print("                export DOW_CEV_MODEL=aci DOW_CEV_ACI_MAX=60")
 
     # ---------------- 7) kamera ----------------
+    # ⛔ SAHTE KİPTE DE KAMERA AÇILABİLMELİ (30 Ağu 2026).
+    #   Eskiden `--sahte` kamerayı HİÇ açmıyordu; görüş yolu (kamera ->
+    #   dedektör -> kutu -> panel) yalnız tam donanımla sınanabiliyordu.
+    #   Oysa dizüstü kamerasıyla bile boru hattının AKTIĞI doğrulanabilir.
+    #   Kural: `--kamera` AÇIKÇA verilmişse sahte kipte de açılır.
     kam = None
-    if not a.sahte:
+    _kam_istendi = ("--kamera" in sys.argv)
+    if (not a.sahte) or _kam_istendi:
         KameraCfg.KAYNAK = a.kamera
         kam = Kamera()
         if kam.ac():
@@ -267,6 +279,22 @@ def main():
     print("  Çıkmak için Ctrl+C")
     print("=" * 70)
 
+    # ---------------- 9b) uçuş kaydı ----------------
+    # ⛔ HER ZAMAN AÇIK. İlk otonom denemeden sonra "ne oldu" sorusunu
+    #   cevaplayacak veri, ancak o an kaydedilmişse vardır. Kapatmak için
+    #   --kayit-yok. Yazma ayrı iplikte; güdüm döngüsünü BEKLETMEZ.
+    kayitci = None
+    if not a.kayit_yok:
+        kayitci = Kayitci(hz=a.kayit_hz, uretici=PANEL._durum)
+        if kayitci.basla():
+            PANEL._D["kayit"] = kayitci
+            print("  KAYIT     : %s  (%.0f Hz)" % (kayitci.yol, a.kayit_hz))
+        else:
+            print("  KAYIT     : ⛔ açılamadı — %s" % kayitci.hata)
+            kayitci = None
+    else:
+        print("  KAYIT     : kapalı (--kayit-yok)")
+
     ks.basla()                     # 50 Hz CRSF yazıcısı kendi ipliğinde
 
     # ---------------- 10) ana döngü ----------------
@@ -297,6 +325,15 @@ def main():
                 sonraki = time.monotonic()
     except KeyboardInterrupt:
         print("\n  kapatılıyor...")
+        # ⛔ KAPANIŞ KESİNTİYE UĞRAMAMALI: ikinci Ctrl+C burada traceback
+        #   basıp kalan temizliği (araç komutlarını bırakma) ATLIYORDU.
+        try:
+            if kayitci is not None:
+                kayitci.dur()
+                print("  KAYIT     : %d satır -> %s"
+                      % (kayitci.n_satir, kayitci.yol))
+        except KeyboardInterrupt:
+            print("  (kayıt kapanışı kesildi)")
     finally:
         ks.dur()
         if sv:
@@ -310,6 +347,11 @@ def main():
     return 0
 
 
+_DET_RENK = os.environ.get("DOW_DET_RENK", "bgr").strip().lower()
+if _DET_RENK not in ("bgr", "rgb"):
+    raise ValueError("DOW_DET_RENK='%s' — 'bgr' ya da 'rgb' olmalı" % _DET_RENK)
+
+
 def _gorus(beyin, kare, t, kare_t, gorsel_acik):
     """Kareyi dedektöre ver ve panel için kilit ölçütünü hesapla."""
     import cv2
@@ -319,10 +361,37 @@ def _gorus(beyin, kare, t, kare_t, gorsel_acik):
         _gorus._olcut = KilitDurumu(Ayar)
     kabul = None
     if gorsel_acik and beyin.det is not None:
-        rgb = cv2.cvtColor(kare, cv2.COLOR_BGR2RGB)
-        kabul = beyin.gorsel_tik(rgb, t, kare_t)
+        # ⛔⛔ KANAL SIRASI — SESSİZ TAM ISKA (2026-08-29'da ölçüldü)
+        #
+        #   ultralytics, numpy dizisini BGR kabul eder (cv2.imread gibi).
+        #   Buraya kadar kare zaten BGR'dir. Eskiden burada BGR2RGB
+        #   çevriliyordu ve o ÇEVİRİ, sim modeli `talon_v3` için doğruydu:
+        #   o model aynı çevrilmiş kareler üzerinde eğitilmişti, yani takas
+        #   eğitime GÖMÜLÜ.
+        #
+        #   Gerçek görüntüyle eğitilen `tayarti_v1` NORMAL eğitildi ve BGR
+        #   bekler. Takas edilince turuncu uçak maviye döner. ÖLÇÜLDÜ, aynı
+        #   kare, imgsz 640:
+        #        BGR -> güven 0.700   ✔
+        #        RGB -> güven 0.000   ✗ HİÇBİR ŞEY
+        #   Panelde "tespit yok" görünüyordu; model kusursuz çalışıyordu.
+        #
+        #   Bu yüzden kanal sırası ARTIK BİR AYAR. Varsayılan "bgr"
+        #   (ultralytics'in normal sözleşmesi); sim modeline dönersen
+        #   DOW_DET_RENK=rgb ver.
+        girdi = kare if _DET_RENK == "bgr" else cv2.cvtColor(
+            kare, cv2.COLOR_BGR2RGB)
+        kabul = beyin.gorsel_tik(girdi, t, kare_t)
     bilgi = _gorus._olcut.guncelle(t, kabul)
     PANEL._D["son_kutu"] = kabul[:4] if kabul else None
+    # ⭐ HAM TESPİT — güdüm reddetse bile panelde görünsün. Model çalışıyor
+    #   mu sorusunu ekrandan cevaplayabilmek için (bkz. dow/ana.py kancası).
+    hk = getattr(beyin, "_ham_kutu", None)
+    # ⛔ HER ZAMAN GÖNDER. Kabul edilen kutu varsa panel yeşili çizer ve
+    #   hamı çizmez; ama MENZİL hesabı için ham kutu yine lazım — hedef
+    #   kaç metrede olursa olsun ekranda bir sayı görünsün.
+    PANEL._D["ham_kutu"] = list(hk[:5]) if hk else None
+    PANEL._D["ham_sebep"] = getattr(beyin, "_ham_sebep", "")
     PANEL._D["olcut"] = {"bu_kare": bool(bilgi.get("kilit_bu")),
                          "kilit_s": round(bilgi.get("kilit_s", 0.0), 2),
                          "sebep": bilgi.get("kilit_sebep", ""),

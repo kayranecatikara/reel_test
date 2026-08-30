@@ -383,8 +383,26 @@ class IbvsCfg:
     #   0 = ölü bant yok (Ö-G'deki davranış).
     YAVASLA_OLU   = _fi("DOW_YAVASLA_OLU", 0.0)    # ölü bant (°)
 
-    CONF_MIN      = 0.40    # ÖLÇÜLDÜ (dow/gorus/dedektor.py)
-    BOYUT_MIN_PX  = 8.0     # px; bundan küçük kutu güvenilmez
+    # ⛔ İKİ AYRI EŞİK — karıştırılmasın:
+    #     YEREL_CONF_MIN (0.20) : dedektörün TARAMA eşiği. Kutular burada
+    #                             bulunur; düşük tutulur ki yerellik
+    #                             süzgeci eleyebilsin.
+    #     CONF_MIN       (0.40) : KABUL kapısı. Tarama bulsa bile buradan
+    #                             geçemezse güdüme girmez.
+    #
+    #   0.40 SİM MODELİYLE (talon_v3) ÖLÇÜLDÜ:
+    #       eşik 0.10 -> tespit %49, argmax doğru %43  (yanlış-pozitif çalıyor)
+    #       eşik 0.40 -> tespit %40, argmax doğru %40  (fark KAPANIYOR)
+    #       eşik 0.50 -> tespit %38, argmax doğru %38
+    #   Yani 9 puan tespit karşılığında sahte kilit tamamen bitiyor.
+    #
+    #   ⚠ GERÇEK MODELDE (tayarti_v1) HENÜZ ÖLÇÜLMEDİ. İlk ölçümler
+    #     gerçek Talon'da 0.746 ve 0.887 verdi — eşiğin epey üstünde.
+    #     Uçuş kaydındaki `ham_sebep` sütunu "conf" redlerini sayar;
+    #     çok çıkarsa eşik GERÇEK ÖLÇÜMLE düşürülür:
+    #         DOW_CONF_MIN=0.30 ./baslat_drone.sh --gorsel
+    CONF_MIN      = _fi("DOW_CONF_MIN", 0.40)
+    BOYUT_MIN_PX  = _fi("DOW_BOYUT_MIN_PX", 8.0)   # küçük kutu güvenilmez
     MENZIL_MAX_M  = 50.0    # m; ötesinde görsel devir YOK (tespit %10)
     MENZIL_MIN_M  = 3.0     # m; ALTINDAKİ kutu = dev yanlış-pozitif.
                             # 997/3 = 332 px'lik kutu demek; hedef bu boyuta

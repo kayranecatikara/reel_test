@@ -35,7 +35,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _D = {"kamera": None, "komut": None, "baglanti": None, "hedef": None,
       "sunucu": None, "kilitci": None, "beyin": None, "dikey": None,
-      "son_kutu": None, "olcut": None}
+      "son_kutu": None, "olcut": None, "ham_kutu": None,
+      "ham_sebep": "", "kayit": None, "gorsel_aktif": False}
 _kosul = threading.Condition()
 _kare_sayac = [0]
 
@@ -176,6 +177,19 @@ def _durum():
                     h["enlem"], h["boylam"], irtifa_yerden=h["irtifa_ev"])
                 d["hedef_konum"] = {"kuzey": round(hx, 1), "dogu": round(hy, 1),
                                     "yukari": round(hz, 1)}
+            # ⭐ HAM KONUM — BAYAT OLSA BİLE (2026-08-29). Operatör
+            #   "paket geliyor ama verisi eski" durumunu görebilsin diye.
+            #   3B ize GİRMEZ (hayalet iz çizmesin); yalnız METİN.
+            hh = d["hedef"]
+            if (hh.get("ham_enlem") is not None and gb is not None
+                    and gb.cerceve.hazir):
+                mx, my, mz = gb.cerceve.metreye(
+                    hh["ham_enlem"], hh["ham_boylam"],
+                    irtifa_yerden=hh.get("ham_irtifa") or 0.0)
+                d["hedef_ham_konum"] = {
+                    "kuzey": round(mx, 1), "dogu": round(my, 1),
+                    "yukari": round(mz, 1),
+                    "uzaklik": round((mx * mx + my * my) ** 0.5, 1)}
         except Exception:
             pass
     if sv is not None:
@@ -186,8 +200,41 @@ def _durum():
     if by is not None:
         d["gudum"] = {"durum": getattr(by, "durum", "-"),
                       "faz": getattr(by, "faz", "-")}
+    # ⭐ OPTİK SABİTLERİ ve MENZİL KAPILARI — panel menzili METRE olarak
+    #   yazabilsin diye. ⛔ JS'e sabit YAZILMAZ: ayar env'den değişiyor
+    #   (DOW_OPTIK_MENZIL_C) ve sabit yazmak paneli YALANCI yapar.
+    try:
+        from dow.gorus import kamera as _KAM
+        from dow.gudum import ibvs as _IBV
+        # ⛔ GÜDÜMLE AYNI ÖLÇÜ KULLANILMALI. `IbvsCfg.MENZIL_OLCU`
+        #   "kosegen" ise menzil hypot(w,h) ve MENZIL_C_KOSEGEN ile
+        #   hesaplanır; "max" ise max(w,h) ve MENZIL_C ile. Panel farklı
+        #   ölçü kullanırsa ekranda yazan menzil, güdümün kapıda
+        #   kullandığından FARKLI olur ve operatör yanlış teşhis koyar.
+        _olcu = _IBV.IbvsCfg.MENZIL_OLCU
+        d["optik"] = {
+            "olcu": _olcu,
+            "menzil_c": (_KAM.MENZIL_C_KOSEGEN if _olcu == "kosegen"
+                         else _KAM.MENZIL_C),
+            "menzil_min": _IBV.IbvsCfg.MENZIL_MIN_M,
+            "menzil_max": _IBV.IbvsCfg.MENZIL_MAX_M,
+            "boyut_min": _IBV.IbvsCfg.BOYUT_MIN_PX,
+            "conf_min": _IBV.IbvsCfg.CONF_MIN,
+            "f_px": _KAM.F_PX, "tilt": _KAM.TILT_DEG,
+            "w": _KAM.IMG_W, "h": _KAM.IMG_H}
+    except Exception:
+        pass
+    d["gorsel_aktif"] = bool(_D.get("gorsel_aktif"))
+    if _D.get("kayit") is not None:
+        d["kayit"] = _D["kayit"].durum()
     if _D["son_kutu"]:
         d["kutu"] = _D["son_kutu"]
+    # ⭐ HAM TESPİT — modelin süzgeçsiz çıktısı. `_cizim()` bunu zaten
+    #   VİDEONUN ÜSTÜNE çiziyordu ama durum sözlüğüne HİÇ girmiyordu:
+    #   panelin menzil/sebep satırları ve UÇUŞ KAYDI boş kalıyordu.
+    #   (30 Ağu 2026'da yakalandı — ekranda kutu var, kayıtta yok.)
+    d["ham_kutu"] = _D.get("ham_kutu")
+    d["ham_sebep"] = _D.get("ham_sebep") or ""
     if _D["olcut"] is not None:
         d["kilit"] = _D["olcut"]
     # Skydagger bağının kendi durumu (güvenli pencere, RC sayacı)
@@ -196,6 +243,16 @@ def _durum():
             d["bag"] = gb.bag.durum()
         except Exception:
             pass
+    # ⭐ ÖN UÇUŞ KONTROL LİSTESİ — EN SONDA hesaplanır, çünkü sözlüğün
+    #   TAMAMINA bakar. ⛔ Hakemi (komut.py dört şart) DEĞİŞTİRMEZ; yalnız
+    #   panelde OTONOM düğmesini kilitler. Arıza yönü güvenli: liste
+    #   bozulursa otonom açılmaz, elle uçuşa düşülür.
+    try:
+        from gercek import kontrol_listesi as _KL
+        d["kontrol"] = _KL.degerlendir(d)
+    except Exception as e:
+        d["kontrol"] = {"maddeler": [], "hazir": False,
+                        "kalan": ["liste hatası: %s" % e]}
     return d
 
 
@@ -233,6 +290,20 @@ main{display:grid;grid-template-columns:1fr 330px;gap:10px;padding:10px}
 #fpv{width:100%;height:100%;object-fit:contain;display:none}
 #fpv.var{display:block}
 table{width:100%;border-collapse:collapse}
+.pilcubuk{position:relative;height:16px;background:#0b0e13;border:1px solid #2a3550;
+  border-radius:4px;overflow:hidden;margin-bottom:8px}
+.pilcubuk i{display:block;height:100%;width:0;transition:width .3s}
+.pilcubuk b{position:absolute;top:0;bottom:0;width:2px;background:#ff7b7b}
+.katla{cursor:pointer;user-select:none}
+.katla .ok3{color:#7d8aa0;font-size:10px}
+.iyi{color:#5fe08a}.orta{color:#ffd166}.kotu2{color:#ff7b7b}
+.klsat{display:flex;gap:8px;align-items:baseline;padding:3px 0;font-size:12px;
+  border-bottom:1px solid #1c2438}
+.klsat:last-child{border-bottom:0}
+.klsat .im{width:14px;flex:none;font-weight:700}
+.klsat .bas{flex:1}
+.klsat .no{color:#7d8aa0;font-size:11px;text-align:right}
+button.kucuk{padding:5px 6px;font-size:11px}
 td{padding:2px 0}td:last-child{text-align:right;font-weight:700}
 .sonuk{color:#7d8aa0}
 .kumanda{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
@@ -306,8 +377,31 @@ button.armli{background:#166534;border-color:#4ade80}
       <div class=uyarilar id=uyarilar></div>
     </div>
     <div class=kutu style="margin-top:10px">
-      <h3>Telemetri</h3>
-      <table id=telem></table>
+      <h3 class=katla id=kl_bas>Ön uçuş kontrolü <span id=kl_ozet
+        class=rozet>—</span> <span class=ok3 id=kl_ok>▾</span></h3>
+      <div id=kl_liste></div>
+      <div class=satir style="margin-top:8px">
+        <button id=b_kayit class=kucuk>KAYDI GÖSTER</button>
+      </div>
+      <div id=kl_kayit class=sonuk style="font-size:11px;margin-top:6px"></div>
+    </div>
+    <div class=kutu style="margin-top:10px">
+      <h3>Pil <span class=sonuk style="text-transform:none"
+        id=pil_ozet>—</span></h3>
+      <div class=pilcubuk><i id=pil_dolu></i><b id=pil_esik></b></div>
+      <table id=pil_tablo></table>
+    </div>
+    <div class=kutu style="margin-top:10px">
+      <h3>Uçuş</h3>
+      <table id=telem_ucus></table>
+    </div>
+    <div class=kutu style="margin-top:10px">
+      <h3>Hedef</h3>
+      <table id=telem_hedef></table>
+    </div>
+    <div class=kutu style="margin-top:10px">
+      <h3 class=katla id=sistem_bas>Sistem <span class=ok3>▸</span></h3>
+      <table id=telem_sistem style="display:none"></table>
     </div>
     <div class=kutu style="margin-top:10px">
       <h3>3B Konum <span class=sonuk style="text-transform:none">
@@ -391,6 +485,30 @@ const yerR=pad(document.getElementById("padR"),document.getElementById("topuzR")
 
 document.getElementById("b_manuel").onclick=()=>kip("MANUEL");
 document.getElementById("b_otonom").onclick=()=>kip("OTONOM");
+// ⛔ ZORLAMA YOLU AÇIK. Sahada listenin bir maddesi yanlış kırmızı
+//   yanabilir; operatörün otonomdan MAHRUM kalması bundan tehlikelidir.
+//   Çift tık + onay ile kilit kalkar ve durum kayda düşer.
+document.getElementById("b_otonom").ondblclick=()=>{
+  if(window._klZorla) return;
+  if(confirm("ÖN UÇUŞ KONTROLÜ EKSİK.\n\nYine de OTONOM açılsın mı?\n"+
+             "Bu karar uçuş kaydına düşer.")){
+    window._klZorla=true;
+    document.getElementById("b_otonom").disabled=false;
+  }
+};
+document.getElementById("kl_bas").onclick=()=>{
+  const t=document.getElementById("kl_liste");
+  const ac=(t.style.display==="none");
+  t.style.display=ac?"":"none";
+  document.getElementById("kl_ok").textContent=ac?"▾":"▸";
+};
+document.getElementById("b_kayit").onclick=async()=>{
+  const e=document.getElementById("kl_kayit");
+  try{
+    const d=await (await fetch("/api/durum")).json();
+    e.textContent=(d.kayit&&d.kayit.yol)?d.kayit.yol:"kayıt kapalı";
+  }catch(x){ e.textContent="okunamadı"; }
+};
 function kip(k){
   // ⛔ ÖNCE WS: HTTP kuyruğa girip GECİKEBİLİR (sahada tam bu oldu —
   //   MANUEL'e basıldı, düğme maviye döndü ama kip OTONOM kaldı).
@@ -620,6 +738,15 @@ function c3ekle(iz,p){
 }
 setInterval(c3ciz, 100);
 
+// SİSTEM bloğu katlanabilir — uçuşta gerekmeyen sayaçlar göz yormasın.
+// Varsayılan KAPALI; tıklayınca açılır.
+document.getElementById("sistem_bas").onclick=()=>{
+  const t=document.getElementById("telem_sistem");
+  const ac=(t.style.display==="none");
+  t.style.display=ac?"":"none";
+  document.querySelector("#sistem_bas .ok3").textContent=ac?"▾":"▸";
+};
+
 const sat=(a,b,s)=>`<tr><td class=sonuk>${a}</td><td class="${s||''}">${b}</td></tr>`;
 function rozet(id,ok,metin){ const e=document.getElementById(id);
   e.className="rozet "+(ok===true?"ok":ok===false?"kotu":"uyari"); e.textContent=metin; }
@@ -674,7 +801,32 @@ function gosterim(d){
   if(kumandaVar && k.komut){ // fiziksel kumanda -> topuzlar ONU gösterir
     yerL(k.komut[3],k.komut[0]); yerR(k.komut[2],k.komut[1]); }
   const ko=d.konum||{}, du=d.durus||{}, hz=d.hiz||{}, hd=d.hedef||{}, g=d.gudum||{};
-  document.getElementById("telem").innerHTML=
+  const hh=d.hedef_ham_konum;
+  // ---- PİL — uçuşun en kritik göstergesi ----
+  const pv=a.pil_v, py=a.pil_yuzde;
+  const pilTaze=(a.yas_pil!=null&&a.yas_pil<3);
+  if(pv!=null&&pilTaze){
+    // 6S varsayımı yok: yüzde varsa onu, yoksa hücre gerilimine göre kaba oran
+    const yuz=(py!=null?py:Math.max(0,Math.min(100,(pv/6-3.3)/(4.2-3.3)*100)));
+    const renk=(yuz<20?"#ff7b7b":yuz<40?"#ffd166":"#5fe08a");
+    document.getElementById("pil_dolu").style.width=yuz.toFixed(0)+"%";
+    document.getElementById("pil_dolu").style.background=renk;
+    document.getElementById("pil_esik").style.left="20%";
+    document.getElementById("pil_ozet").innerHTML=
+      '<b style="color:'+renk+'">'+pv.toFixed(2)+' V</b>'+
+      (py!=null?("  ·  "+py+"%"):"");
+  }else{
+    document.getElementById("pil_dolu").style.width="0";
+    document.getElementById("pil_ozet").innerHTML=
+      '<b style="color:#ff7b7b">VERİ YOK</b>';
+  }
+  document.getElementById("pil_tablo").innerHTML=
+    sat("gerilim",(pv!=null?pv.toFixed(2)+" V":"—"))+
+    sat("doluluk",(py!=null?py+" %":"—"))+
+    sat("akım",(a.pil_akim!=null?a.pil_akim.toFixed(1)+" A":"—"))+
+    sat("tüketilen",(a.pil_mah!=null?a.pil_mah+" mAh":"—"));
+
+  document.getElementById("telem_ucus").innerHTML=
     sat("kaynak",(k.kaynak||"—")+(k.sebep&&k.sebep!="-"?" ("+k.sebep+")":""))+
     sat("güdüm",(g.durum||"—")+" / "+(g.faz||"—"))+
     sat("kuzey / doğu",(ko.kuzey??"—")+" / "+(ko.dogu??"—")+" m")+
@@ -682,17 +834,102 @@ function gosterim(d){
     sat("hız",(hz.yatay??"—")+" m/s   ↕ "+(hz.dikey??"—"))+
     sat("yatış / dikilme",(du.roll??"—")+"° / "+(du.pitch??"—")+"°")+
     sat("yönelme",(du.yaw??"—")+"°")+
-    sat("hedef",hd.var?("var, yaş "+hd.yas+" s"):"YOK")+
-    sat("hedef irtifa/hız",(hd.irtifa_ev??"—")+" m / "+(hd.hiz??"—")+" m/s")+
-    sat("telemetri yaşı","gps "+(a.yas_gps??"—")+"  duruş "+(a.yas_durus??"—"))+
+    sat("telemetri yaşı","gps "+(a.yas_gps??"—")+"  duruş "+(a.yas_durus??"—"));
+
+  // ---- HEDEF ----
+  // ⭐ MENZİL METRE OLARAK. Kutu boyutundan çıkıyor ve bugüne kadar
+  //   panelde HİÇ yazmıyordu; 3 m menzil kapısı yüzünden kutu
+  //   reddedilirken sebebi anlamak saatler aldı (29 Ağu 2026).
+  // ⭐ MENZİL: önce kabul edilen kutu, yoksa MODELİN HAM kutusu.
+  //   Hedef kaç metrede olursa olsun ekranda bir sayı görünsün — kabul
+  //   edilmediyse sebebi zaten yanında yazıyor.
+  const hamK=d.ham_kutu, kabulK=d.kutu;
+  const kt=kabulK||hamK, kl=d.kilit||{}, op=d.optik||{};
+  const kabulEdildi=!!kabulK;
+  const MC=op.menzil_c||0, MIN=op.menzil_min??3, MAX=op.menzil_max??50;
+  let menzil=null, kutuPx=null;
+  if(kt&&MC>0){
+    // güdümle AYNI ölçü: kosegen -> hypot, max -> max
+    kutuPx=(op.olcu==="kosegen")?Math.hypot(kt[2],kt[3]):Math.max(kt[2],kt[3]);
+    menzil=MC/kutuPx;
+  }
+  document.getElementById("telem_hedef").innerHTML=
+    sat("GPS akışı",hd.var
+        ?("<b class=iyi>VAR</b>, yaş "+hd.yas+" s")
+        :(hd.n_paket
+          ?("<b class=kotu2>BAYAT</b> — paket "+hd.n_paket+
+            ", ulaşma "+hd.yas_ulasma+" s, <b>veri "+hd.yas_veri+" s</b>")
+          :"<b class=kotu2>PAKET YOK</b>"))+
+    sat("hedef GPS",(hd.ham_enlem!=null
+        ?(hd.ham_enlem.toFixed(7)+" , "+hd.ham_boylam.toFixed(7))
+        :"—"))+
+    sat("kuzey / doğu",(hh
+        ?(hh.kuzey+" / "+hh.dogu+" m   ⟶ "+hh.uzaklik+" m")
+        :"— (köken kurulmadı)"))+
+    sat("irtifa / hız",(hd.ham_irtifa??"—")+" m / "+(hd.ham_hiz??"—")+" m/s")+
+    sat("görsel kutu",(kutuPx
+        ?(Math.round(kt[2])+"x"+Math.round(kt[3])+" px"+
+          (kt.length>4?('  <span class=sonuk>güven '+kt[4].toFixed(2)+"</span>"):"")+
+          (kabulEdildi?'  <span class=iyi>kabul</span>'
+            :'  <span class=kotu2>RED: '+(d.ham_sebep||"?")+"</span>"))
+        :"—"))+
+    sat("<b>görsel menzil</b>",(menzil!=null
+        ?('<b class="'+(menzil<MIN?"kotu2":menzil>MAX?"orta":"iyi")+'">'+
+          menzil.toFixed(1)+" m</b>"+
+          (menzil<MIN?("  ⛔ "+MIN+" m altı reddedilir")
+           :menzil>MAX?("  ⚠ "+MAX+" m üstü"):""))
+        :"—"))+
+    sat("kilit",(kl.kilit_s!=null
+        ?(kl.kilit_s+" s"+(kl.sebep?("  <span class=sonuk>"+kl.sebep+"</span>"):""))
+        :"—"));
+
+  // ---- ÖN UÇUŞ KONTROL LİSTESİ ----
+  const kls=d.kontrol||{maddeler:[],hazir:false,kalan:[]};
+  const oz=document.getElementById("kl_ozet");
+  const gecen=kls.maddeler.filter(m=>m.ok).length;
+  oz.className="rozet "+(kls.hazir?"ok":"kotu");
+  oz.textContent=gecen+"/"+kls.maddeler.length;
+  document.getElementById("kl_liste").innerHTML=kls.maddeler.map(m=>
+    '<div class=klsat title="'+(m.aciklama||"")+'">'+
+    '<span class="im '+(m.ok?"iyi":"kotu2")+'">'+(m.ok?"✔":"✗")+'</span>'+
+    '<span class=bas>'+m.baslik+'</span>'+
+    '<span class=no>'+(m.not||"")+'</span></div>').join("");
+  // ⛔ OTONOM DÜĞMESİ KİLİDİ — hakemi DEĞİŞTİRMEZ, yalnız yanlışlıkla
+  //   basmayı engeller. Zorlamak isteyen onay kutusundan geçer.
+  const bOto=document.getElementById("b_otonom");
+  if(bOto){
+    bOto.disabled=!kls.hazir&&!window._klZorla;
+    bOto.title=kls.hazir?"otonom güdüme geç"
+      :("kapalı — eksik: "+(kls.kalan||[]).join(", ")+
+        "   (yine de açmak için çift tıkla)");
+  }
+  // ---- UÇUŞ KAYDI ----
+  const ky=d.kayit;
+  document.getElementById("kl_kayit").innerHTML=ky
+    ?((ky.aciks?'<span class=iyi>● KAYIT</span> ':'<span class=kotu2>● DURDU</span> ')+
+      ky.satir+" satır · "+ky.mb+" MB"+
+      (ky.dusen?(' <span class=kotu2>· '+ky.dusen+" düşen</span>"):"")+
+      (ky.hata?(' <span class=kotu2>· '+ky.hata+"</span>"):""))
+    :"kayıt kapalı";
+
+  // ---- SİSTEM ----
+  document.getElementById("telem_sistem").innerHTML=
     sat("kamera",kam.acik?((kam.cihaz||"?")+"  "+(kam.genislik||0)+"x"+
         (kam.yukseklik||0)+" @"+(kam.sayac||0)):"kapalı")+
+    sat("ELRS link","↑ LQ "+(a.link_lq??"—")+"  RSSI "+(a.link_rssi??"—")+" dBm"+
+        (a.link_snr!=null?("  SNR "+a.link_snr):""))+
+    sat("ELRS ↓ / RF",(a.link_asagi_lq??"—")+"  /  "+(a.link_rf_kipi??"—"))+
     sat("CRC hatası",a.crc_hata??"—")+
+    sat("çerçeve",a.cerceve??"—")+
     sat("panel↔sunucu",(wsAcik?"WS ":"HTTP ")+postHz+" Hz"+
         (postHata?("  ⛔ "+postHata+" hata"):"")+"   fpv "+kareHz+" Hz")+
     sat("kumanda",k.kmd_takili?(k.kmd_hakim?"SÜRÜYOR":"takılı, duruyor")
         :("aranıyor… "+((k.sayac&&k.sayac.kmd_arama)||0)+" deneme  "+
-          "(EdgeTX USB Mode = Joystick?)"));
+          "(EdgeTX USB Mode = Joystick?)"))+
+    (k.sayac?sat("hakem","otonom "+(k.sayac.otonom||0)+
+        " · veto "+(k.sayac.veto||0)+" · kopuk "+(k.sayac.kmd_kopuk||0)):"")+
+    (d.dikey?sat("dikey döngü",(d.dikey.aktif?"aktif":"pasif")+
+        "  (pasif çağrı "+(d.dikey.pasif||0)+")"):"");
   let u=[];
   if(a.canli===false) u.push("⛔ TELEMETRİ AKMIYOR");
   if(a.koken===false) u.push("⚠ yerel köken kurulmadı (GPS fix bekleniyor)");
@@ -903,6 +1140,16 @@ def _cizim(kare):
     cv2.rectangle(kare, (x0, y0), (x1, y1), (90, 200, 255), 1)
     cv2.putText(kare, "AV", (x0 + 4, y0 + 16), cv2.FONT_HERSHEY_SIMPLEX,
                 0.5, (90, 200, 255), 1)
+    def _kesikli_dikdortgen(im, a, b, renk, kal, adim=10):
+        """Kesikli dikdörtgen — KABUL EDİLENden ayırt edilebilsin diye.
+        OpenCV'de kesikli çizgi yok; parça parça çiziyoruz."""
+        for x in range(a[0], b[0], adim * 2):
+            cv2.line(im, (x, a[1]), (min(x + adim, b[0]), a[1]), renk, kal)
+            cv2.line(im, (x, b[1]), (min(x + adim, b[0]), b[1]), renk, kal)
+        for y in range(a[1], b[1], adim * 2):
+            cv2.line(im, (a[0], y), (a[0], min(y + adim, b[1])), renk, kal)
+            cv2.line(im, (b[0], y), (b[0], min(y + adim, b[1])), renk, kal)
+
     kutu = _D.get("son_kutu")
     if kutu:
         cx, cy, bw, bh = kutu[:4]
@@ -910,6 +1157,20 @@ def _cizim(kare):
         p1 = (int(cx + bw / 2), int(cy + bh / 2))
         kilitli = bool(_D.get("olcut", {}).get("bu_kare"))
         cv2.rectangle(kare, p0, p1, (90, 255, 120) if kilitli else (0, 165, 255), 2)
+    # ⛔ REDDEDİLEN TESPİT — model gördü, güdüm kabul etmedi.
+    #   Bunu çizmezsek ekranda hiçbir iz kalmaz ve "model çalışmıyor"
+    #   sanılır. 29 Ağu 2026'da tam bu oldu: sebep menzil kapısıydı
+    #   (1.5 m < MENZIL_MIN_M 3 m), model kusursuz çalışıyordu.
+    ham = _D.get("ham_kutu")
+    if ham and not kutu:
+        cx, cy, bw, bh = ham[:4]
+        q0 = (int(cx - bw / 2), int(cy - bh / 2))
+        q1 = (int(cx + bw / 2), int(cy + bh / 2))
+        _kesikli_dikdortgen(kare, q0, q1, (80, 80, 255), 2)
+        sb = _D.get("ham_sebep") or "red"
+        gv = (" %.2f" % ham[4]) if len(ham) > 4 else ""
+        cv2.putText(kare, "RED: %s%s" % (sb, gv), (q0[0], max(14, q0[1] - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 80, 255), 2)
     o = _D.get("olcut") or {}
     if o:
         cv2.putText(kare, "KILIT %.1f/%.1f s" % (o.get("kilit_s", 0.0),

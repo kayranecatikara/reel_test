@@ -787,6 +787,16 @@ async function telemetriDongusu(){
     inisHazirCiz(); linkCiz();
     modVurgula();
     armVurgula();
+
+    // ⭐ YEREL EKLEME (bkz. arayuz/KAYNAK.md) — GPS FIX GELİNCE PLANI TAZELE.
+    //   `planla()` yalnız kullanıcı bir alana dokununca çalışıyordu. Sayfa
+    //   fix'ten ÖNCE açılırsa "GPS fix yok (fix=0, 0 uydu)" uyarısı ve
+    //   GÖREVİ YÜKLE kilidi DONMUŞ kalıyordu — üst şeritte "3D-11" yazarken
+    //   bile. Sahada iki kez zaman kaybettirdi (29 Ağu 2026).
+    //   Çare: fix GEÇERSİZ -> GEÇERLİ geçişini yakala ve bir kez planla().
+    const fixIyi = ((T.gps_fix||0) >= 3 && T.lat != null && Math.abs(T.lat) > 1e-6);
+    if (fixIyi && !window._fixVardi){ window._fixVardi = true; planla(); }
+    if (!fixIyi) window._fixVardi = false;
   } catch(e){ /* sunucu kapalıysa sessizce dene */ }
 }
 setInterval(telemetriDongusu, 250);

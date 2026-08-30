@@ -260,8 +260,15 @@ class GercekBaglanti(AracArayuzu):
                       % (g["enlem"], g["boylam"], g["irtifa_amsl_m"], g["uydu"]))
 
     def saglik(self):
-        """Emniyet katmanının ve panelin okuduğu tek sağlık özeti."""
-        g = self._al("gps"); L = self._al("link")
+        """Emniyet katmanının ve panelin okuduğu tek sağlık özeti.
+
+        ⭐ PİL VE LİNK AYRINTISI (2026-08-29) — telemetri bunları ZATEN
+          çözüyordu (`crsf.py`: gerilim_v, pil_yuzde, akim_a, tuketim_mah,
+          yukari/asagi lq/rssi/snr) ama panele HİÇ çıkmıyordu. Operatör
+          drone'un bataryasını GÖREMEDEN uçuyordu; Talon arayüzünde bu
+          bilgi vardı, burada yoktu.
+        """
+        g = self._al("gps"); L = self._al("link"); P = self._al("pil")
         return {
             "canli": self.canli(),
             "koken": self.cerceve.hazir,
@@ -271,6 +278,17 @@ class GercekBaglanti(AracArayuzu):
             "yas_vario": round(self.yas("vario"), 3),
             "link_lq": (L or {}).get("yukari_lq", -1),
             "link_rssi": (L or {}).get("yukari_rssi_dbm", 0),
+            # --- link ayrıntısı: hangi yön zayıflıyor, hangi RF kipi ---
+            "link_asagi_lq": (L or {}).get("asagi_lq", -1),
+            "link_snr": (L or {}).get("yukari_snr"),
+            "link_rf_kipi": (L or {}).get("rf_kipi"),
+            "yas_link": round(self.yas("link"), 3),
+            # --- pil: uçuşun en kritik göstergesi ---
+            "pil_v": (P or {}).get("gerilim_v"),
+            "pil_yuzde": (P or {}).get("pil_yuzde"),
+            "pil_akim": (P or {}).get("akim_a"),
+            "pil_mah": (P or {}).get("tuketim_mah"),
+            "yas_pil": round(self.yas("pil"), 3),
             "crc_hata": self.bag.cozucu.n_crc_hata,
             "cerceve": self.bag.cozucu.n_cerceve,
         }

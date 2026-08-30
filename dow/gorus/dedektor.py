@@ -97,10 +97,64 @@ import numpy as np
 #     -> Elenen özellikten kalan artık, üç gün boyunca her ölçümün altını oydu.
 #
 #   Artık model YALNIZ kuruluşta, TEK yerden seçilir; çalışma anında değişmez.
-MODEL_YOLU = "modeller/%s.pt" % os.environ.get("DOW_MODEL", "talon_v3")
-IMGSZ_UZAK = 1920      # ÖLÇÜLDÜ: 960 kullanmak 40-60 m'de tespiti %56 -> %7 düşürür
-IMGSZ_YAKIN = 960      # yakında hız kazanmak için (24 ms vs 60 ms)
-CONF_MIN   = 0.40      # ÖLÇÜLDÜ: argmax'ı yanlış-pozitiften korur
+# ⛔⛔ YOL ÇALIŞMA DİZİNİNDEN BAĞIMSIZ OLMALI (30 Ağu 2026'da yakalandı).
+#   Eskiden göreli yazılıydı: "modeller/<ad>.pt". `baslat_drone.sh`
+#   çalışma dizinini `reel/` yapıyor ve model orada DEĞİL, depo kökünde.
+#   Sonuç: dedektör HİÇ yüklenmiyordu, "görsel KAPALI" satırı akıp
+#   gidiyordu ve ekranda hiç kutu çıkmıyordu. Depoyu kökten çalıştıran
+#   testlerde sorun görünmüyordu — en sinsi hata türü.
+_DOW_KOK = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))          # .../dow/gorus/dedektor.py -> kök
+
+
+def _model_yolu():
+    ad = os.environ.get("DOW_MODEL", "talon_v3")
+    acik = os.environ.get("DOW_MODEL_YOL")        # tam yol vermek isteyene
+    if acik:
+        return acik
+    return os.path.join(_DOW_KOK, "modeller", "%s.pt" % ad)
+
+
+MODEL_YOLU = _model_yolu()
+
+# ============================================================================
+#  ⭐ ÇÖZÜNÜRLÜK DİKİŞİ (2026-08-29) — gerçek kamera için
+#
+#  ⛔ AŞAĞIDAKİ SAYILAR 1920x1080 KADRAJDA ÖLÇÜLDÜ. Gerçek FPV zinciri
+#    640x480 veriyor. İkisi arasındaki fark, "imgsz" sayısının ANLAMINI
+#    değiştiriyor:
+#
+#      1920x1080 kaynakta  imgsz=1920 -> ölçek 1.0  (NATİF piksel)
+#       640x480  kaynakta  imgsz=1920 -> ölçek 3.0  (BÜYÜTME, yeni bilgi YOK)
+#
+#    Yani simdeki "1920, 960'ı yener" bulgusu aslında "NATİF çözünürlük,
+#    KÜÇÜLTMEYİ yener" demekti. 640 genişlikte kaynakta bunun sadık
+#    karşılığı imgsz=640'tır; 1920 kullanmak 8.3 KAT yavaşlatır
+#    (ölçüldü RTX 4060, 640x480 kare: 5.3 ms -> 44.0 ms).
+#
+#  Aynı şey YAKIN_ESIK_PX için de geçerli: 55 px, 1920 genişlikte ölçüldü.
+#  640 genişlikte AYNI fiziksel hedef 3 kat küçük görünür -> eşik ~18 px.
+#
+#  ⛔ VARSAYILANLAR DEĞİŞMEDİ. Hiçbir DOW_DET_* verilmezse simülasyonda
+#    ölçülmüş davranış BİREBİR korunur. Gerçek kamera değerleri
+#    `reel/baslat_drone.sh` içinde verilir.
+# ============================================================================
+def _f(k, v):
+    x = os.environ.get(k)
+    if x is None or x.strip() == "":
+        return float(v)
+    try:
+        return float(x)
+    except ValueError:
+        raise ValueError("%s='%s' sayı değil" % (k, x))
+
+
+IMGSZ_UZAK  = int(_f("DOW_DET_IMGSZ_UZAK", 1920))
+#   ÖLÇÜLDÜ (1920x1080): 960 kullanmak 40-60 m'de tespiti %56 -> %7 düşürür
+IMGSZ_YAKIN = int(_f("DOW_DET_IMGSZ_YAKIN", 960))
+#   yakında hız kazanmak için (24 ms vs 60 ms)
+CONF_MIN    = _f("DOW_DET_CONF", 0.40)
+#   ÖLÇÜLDÜ: argmax'ı yanlış-pozitiften korur
 # ⛔ `DEVIR_MENZIL_M` BURADAN SİLİNDİ (2026-08-25, §5.12): ölü sabitti,
 #   hiçbir güdüm kodu okumuyordu. Görsel devrin GERÇEK menzil tavanı
 #   `ibvs.IbvsCfg.MENZIL_MAX_M` (50 m) — `gecerli()` orada uyguluyor.
@@ -124,7 +178,32 @@ CONF_MIN   = 0.40      # ÖLÇÜLDÜ: argmax'ı yanlış-pozitiften korur
 # 55 px'in ALTINDA 1920 açık ara kazanıyor (54 m'de %6 -> %87, 14 kat).
 # 55 px'in ÜSTÜNDE ikisi eşitleniyor (%92 vs %90) ama 960 1.6 KAT HIZLI
 # -> terminal fazda (menzil <18 m, kapanma hızlı) tepki süresi kazanılır.
-YAKIN_ESIK_PX = 55.0   # ÖLÇÜLDÜ (≈18 m menzil)
+YAKIN_ESIK_PX = _f("DOW_DET_YAKIN_ESIK", 55.0)   # ÖLÇÜLDÜ (≈18 m menzil)
+#   ⚠ 1920 GENİŞLİKTE ölçüldü. 640 genişlikte aynı hedef 3 kat küçüktür.
+
+
+# ⛔ `half` ULTRALYTICS 8.4'TE KULLANIMDAN KALKTI ve her çıkarımda
+#   uyarı basıyor. 130 FPS'te bu, konsolu saniyede yüzlerce satırla
+#   dolduruyor ve AÇILIŞ TEŞHİSLERİNİ boğuyor — sahada bilgi kaybı.
+#   ÖLÇÜLDÜ (30 Ağu 2026, RTX 4060, 640x480): fp32 5.3 ms · "fp16" 5.2 ms
+#   -> bayrak ZATEN İŞE YARAMIYOR. Destekleniyorsa geçilir, değilse
+#   HİÇ geçilmez; davranış aynı, gürültü biter.
+def _half_destekli():
+    try:
+        import inspect
+        from ultralytics.engine.model import Model as _M
+        return "half" in inspect.signature(_M.predict).parameters
+    except Exception:
+        return False
+
+
+try:
+    import warnings as _w
+    _w.filterwarnings("ignore", message=".*'half' is deprecated.*")
+except Exception:
+    pass
+
+HALF_GECERLI = _half_destekli()
 
 
 def _b(k, v):  return os.environ.get(k, str(int(v))).strip() not in ("0","","false","False")
@@ -221,13 +300,16 @@ class Dedektor:
         self.son_pencere = 0             # §5.1 mekanizma: 0 = tam kadraj
         self.son_ms = 0.0                # §5.1 mekanizma: tarama süresi
         self.pencere_say = 0; self.tam_say = 0; self.iska_tam = 0
+        self.son_ham = None              # GÖSTERİM — güdüm okumaz
+        self.son_ham_n = 0               # GÖSTERİM — kaç aday vardı
         self._fp16 = False               # modelin O ANKİ gerçek hassasiyeti
 
     def isit(self, img):
         for iz in (IMGSZ_YAKIN, IMGSZ_UZAK):
             for _ in range(2):
                 self.m.predict(img, imgsz=iz, conf=self.conf,
-                               half=DetCfg.FP16, verbose=False)
+                               verbose=False,
+                               **({"half": DetCfg.FP16} if HALF_GECERLI else {}))
         self._isindi = True
 
     def _imgsz_sec(self):
@@ -281,7 +363,8 @@ class Dedektor:
         ÇIKTI BİT BİT AYNI — aynı tensörden aynı float'lar okunuyor,
         yalnız aktarım sayısı değişiyor (tests/test_dow.py B43 bunu sınar)."""
         r = self.m.predict(im, imgsz=imgsz, conf=conf,
-                           half=DetCfg.FP16, verbose=False)[0]
+                           verbose=False,
+                           **({"half": DetCfg.FP16} if HALF_GECERLI else {}))[0]
         b = r.boxes
         if b is None or len(b) == 0:
             return []
@@ -319,6 +402,7 @@ class Dedektor:
             if kutular or not DetCfg.ISKA_TAM:
                 self.son_pencere = P
                 self.son_ms = (time.perf_counter() - t0) * 1000.0
+                self._ham_kaydet(kutular)
                 return kutular
             self.iska_tam += 1          # pencere boş -> AYNI tikte tam kadraj
         iz = self._imgsz_sec()
@@ -327,7 +411,21 @@ class Dedektor:
         self.tam_say += 1
         self.son_pencere = 0
         self.son_ms = (time.perf_counter() - t0) * 1000.0
+        self._ham_kaydet(kutular)
         return kutular
+
+    def _ham_kaydet(self, kutular):
+        """⭐ GÖSTERİM İÇİN — MODELİN HAM ÇIKTISI, hiçbir süzgeçten
+        geçmemiş hâli. GÜDÜM BUNU OKUMAZ.
+
+        NİYE: `_yerel_bul` adayları YERELLİKLE eliyor, `gecerli()` menzil
+        ve boyutla eliyor. İkisi de haklı — ama operatör ekranda HİÇBİR İZ
+        göremeyince "model çalışmıyor" sanıyor. 29-30 Ağu 2026'da tam bu
+        oldu ve saatler kaybedildi. Model ne gördüyse ekranda GÖRÜNSÜN;
+        güdümün onu kabul edip etmediği AYRI bir bilgidir (ayrı renk).
+        """
+        self.son_ham = (max(kutular, key=lambda k: k[4]) if kutular else None)
+        self.son_ham_n = len(kutular)
 
     def bul(self, img, merkez=None):
         """En yüksek güvenli kutu: (cx, cy, w, h, conf) ya da None.

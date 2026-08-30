@@ -33,6 +33,7 @@ yeniden çekilirse bunlar TEKRAR uygulanmalıdır.
 | dosya | ne | neden |
 |---|---|---|
 | `gcs/static/index.html` | `#haritaAc` düğmesi + açıklaması (`<section>`, MANUEL KONTROL'ün altında) ve `click` işleyicisi (`gorevDurumCiz` üstünde) | Harita planlayıcısı ayrı bir programdır (port 8010). Kullanıcı iki arayüz arasında URL kovalamasın diye tek giriş noktası: `localhost:8000`. |
+| `gcs/static/index.html` | Telemetri döngüsünün sonunda **fix geçişinde `planla()`** çağrısı (`window._fixVardi`) | `planla()` yalnız kullanıcı girdisinde çalışıyordu; sayfa fix'ten önce açılırsa "GPS fix yok" uyarısı ve `GÖREVİ YÜKLE` kilidi **donmuş** kalıyordu — üst şeritte `3D-11` yazarken bile. 29 Ağu 2026'da sahada iki kez zaman kaybettirdi. |
 
 **Kod tarafında hiçbir şey değiştirilmedi** — güdüm, görev protokolü,
 mod komutları, parametre yolu olduğu gibi duruyor. Değişiklik yalnız
@@ -40,11 +41,9 @@ statik HTML'e eklenen bir düğme ve `window.open` çağrısıdır.
 
 ### Bilinçli olarak DEĞİŞTİRİLMEYENLER
 
-* **`planla()` yalnız kullanıcı girdisinde çalışıyor**, telemetri
-  döngüsünde değil (`index.html`). Sayfa GPS fix'ten önce açılırsa
-  "GPS fix yok" uyarısı ve `GÖREVİ YÜKLE` kilidi DONMUŞ kalır; bir
-  şekil düğmesine basmak ya da sayfayı yenilemek çözer.
-  *(29 Ağu 2026'da sahada yaşandı.)*
+* ~~`planla()` yalnız kullanıcı girdisinde çalışıyor~~ — **DÜZELTİLDİ**
+  (yukarıdaki tabloya bak). Fix geçişinde bir kez `planla()` çağrılıyor.
+  Yukarı akışta bu düzeltme YOKTUR; yeniden çekilirse tekrar uygulanmalı.
 * **Arayüz araçtaki görevi GERİ OKUMAZ**; yalnız kendi yüklediğini
   hatırlar (`sunucu.py` `durum.gorev`). Planlayıcıdan yüklenen görev
   onun için görünmez ve `BAŞLAT` kapalı kalır. Bu yüzden planlayıcının

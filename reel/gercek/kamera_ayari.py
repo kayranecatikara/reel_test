@@ -127,8 +127,14 @@ def f_px_hesapla(olcumler, kanat_m):
     """
     tekil = []
     for o in olcumler:
-        if o["px"] > 0 and o["mesafe"] > 0:
-            tekil.append(o["px"] * o["mesafe"] / float(kanat_m))
+        # ⭐ HER ÖLÇÜM KENDİ CİSİM GENİŞLİĞİNİ TAŞIR (2026-08-29).
+        #   Kalibrasyon için Talon ŞART DEĞİL: genişliği bilinen HERHANGİ
+        #   bir cisim olur (cetvel, kapı kanadı). Formül S'yi bilmek ister,
+        #   cismin ne olduğunu değil — bu, kapalı ortamda kalibrasyonu
+        #   mümkün kılar. `genislik` yoksa eski davranış (Talon kanadı).
+        s_m = float(o.get("genislik") or kanat_m)
+        if o["px"] > 0 and o["mesafe"] > 0 and s_m > 0:
+            tekil.append(o["px"] * o["mesafe"] / s_m)
     if not tekil:
         return None, [], None
     s = sorted(tekil)
@@ -152,6 +158,11 @@ def rapor():
         uy = _D["ufuk_y"]
         w, h = _D["w"], _D["h"]
         fov, fov_eksen = _D["fov"], _D["fov_eksen"]
+    # ⭐ HER ÖLÇÜM KENDİ CİSİM GENİŞLİĞİNİ TAŞIR.
+    #   Kalibrasyon için Talon ŞART DEĞİL: genişliği bilinen HERHANGİ bir
+    #   cisim olur (cetvel, kapı kanadı, masa). Formül S'yi bilmek ister,
+    #   cismin ne olduğunu değil. Bu, kalibrasyonu kapalı ortamda da
+    #   mümkün kılar — Talon'u 30 m uzağa koyacak yer aramaya gerek yok.
     kanat = float(os.environ.get("DOW_OPTIK_KANAT", "1.718"))
     f, tekil, sapma = f_px_hesapla(olc, kanat)
     f_spec = f_px_spectan(fov, w, h, fov_eksen)
@@ -331,10 +342,16 @@ pre{background:#080b10;border:1px solid #2a3550;border-radius:5px;padding:9px;
         <div class=satir><button id=b_spec class=ana>UYGULA</button></div>
       </div>
       <div id=odak_alan>
-        <label>Hedefe ÖLÇÜLEN mesafe (m)</label>
-        <input id=mesafe type=number value=30 step=1 min=3>
-        <div class=yardim>Şerit metre ya da telemetre ile ölç. Tahmin etme —
-          bu sayı doğrudan F_PX'e çarpan olarak giriyor.</div>
+        <label>Cisme ÖLÇÜLEN mesafe (m)</label>
+        <input id=mesafe type=number value=5 step=0.1 min=0.3>
+        <div class=yardim>Şerit metre ile ölç. Tahmin etme — bu sayı
+          doğrudan F_PX'e çarpan olarak giriyor.</div>
+        <label>Cismin GERÇEK genişliği (m)</label>
+        <input id=genislik type=number value=1.718 step=0.001 min=0.01>
+        <div class=yardim>Talon kanat açıklığı <b>1.718</b>. Ama Talon ŞART
+          DEĞİL: genişliği bilinen herhangi bir cisim olur — cetvel, kapı
+          kanadı, masa kenarı. Formül cismin NE olduğunu değil, KAÇ METRE
+          olduğunu bilmek ister. Kapalı ortamda böyle kalibre edebilirsin.</div>
         <div class=satir><button id=b_dondur class=ana>KAREYİ DONDUR</button></div>
       </div>
       <div class=mesaj id=mesaj></div>
@@ -342,7 +359,8 @@ pre{background:#080b10;border:1px solid #2a3550;border-radius:5px;padding:9px;
 
     <div class=kutu style="margin-top:10px">
       <h3>Ölçümler</h3>
-      <table id=liste><tr><th>#</th><th>mesafe</th><th>px</th><th>F_PX</th></tr></table>
+      <table id=liste><tr><th>#</th><th>mesafe</th><th>cisim</th><th>px</th>
+        <th>F_PX</th></tr></table>
       <div class=satir>
         <button id=b_geri>SON ÖLÇÜMÜ SİL</button>
         <button id=b_temizle class=tehlike>TÜMÜNÜ SİL</button>
@@ -379,6 +397,13 @@ function ciz(){
   const W=1000,H=1000;
   let s="";
   if(kip==="odak"){
+    // ⛔ MERCEK BOZULMASI KILAVUZU. Geniş açı FPV merceğinde düz çizgiler
+    //   kadrajın KENARINDA kavis yapar; F_PX orada yanlış çıkar. Ölçümü
+    //   bu dikdörtgenin İÇİNDE yap — orta %50'lik bölge.
+    s+=`<rect x="${W*0.25}" y="${H*0.25}" width="${W*0.5}" height="${H*0.5}"`+
+       ` fill="none" stroke="#ffd166" stroke-width="2" stroke-dasharray="10 8"/>`;
+    s+=`<text x="${W*0.25+8}" y="${H*0.25-8}" fill="#ffd166"`+
+       ` font-family="monospace" font-size="22">ÖLÇÜMÜ BU ALANDA YAP</text>`;
     nokta.forEach(p=>{const x=p[0]/IW*W,y=p[1]/IH*H;
       s+=`<line x1="${x}" y1="${y-28}" x2="${x}" y2="${y+28}" stroke="#5fe08a" stroke-width="2"/>`;
       s+=`<line x1="${x-28}" y1="${y}" x2="${x+28}" y2="${y}" stroke="#5fe08a" stroke-width="2"/>`;});
@@ -408,7 +433,8 @@ im.addEventListener("click",async e=>{
   if(nokta.length===2){
     const gen=Math.abs(nokta[1][0]-nokta[0][0]);
     const m=parseFloat(document.getElementById("mesafe").value);
-    const d=await post("/api/olcum",{px:gen,mesafe:m});
+    const S=parseFloat(document.getElementById("genislik").value);
+    const d=await post("/api/olcum",{px:gen,mesafe:m,genislik:S});
     mes(d.mesaj,!d.ok);
     nokta=[]; dondu=false; kareAl(); durum();
   }
@@ -444,7 +470,7 @@ function kipSec(k){
   const B={odak:"1) Kanat ucuna tıkla · 2) Öbür kanat ucuna tıkla",
            ufuk:"Uçak YERDE ve GÖVDESİ YATAY iken UFUK ÇİZGİSİNE tıkla",
            spec:"Üretici FOV'undan F_PX hesapla (ölçüm yerine geçmez)"};
-  const Y={odak:"Hedefi kadrajın ORTASINA koy — geniş açı merceklerde kenarda bozulma var. Farklı mesafelerde 3-4 ölçüm al.",
+  const Y={odak:"Cismi SARI ÇERÇEVENİN içine koy — geniş açı merceğinde kenarda bozulma var ve F_PX yanlış çıkar. Farklı mesafelerde 3-4 ölçüm al.",
            ufuk:"Kesikli mavi çizgi görüntünün ortası. Sarı çizgi senin işaretlediğin ufuk. Aradaki fark TILT açısını verir.",
            spec:"F_PX = (yarı_boyut_px) / tan(FOV/2). Hangi eksen olduğunu doğru seç — 720x480'de köşegen kabul etmek yatay kabule göre F_PX'i %20 büyütür."};
   document.getElementById("baslik").textContent=B[k];
@@ -467,10 +493,11 @@ async function durum(){
   document.getElementById("r_coz").textContent=
     son.cozunurluk[0]?(son.cozunurluk[0]+"x"+son.cozunurluk[1]):"";
   document.getElementById("r_n").textContent=son.n_olcum+" ölçüm";
-  let h="<tr><th>#</th><th>mesafe</th><th>px</th><th>F_PX</th></tr>";
+  let h="<tr><th>#</th><th>mesafe</th><th>cisim</th><th>px</th><th>F_PX</th></tr>";
   son.olcumler.forEach((o,i)=>{
-    h+=`<tr><td>${i+1}</td><td>${o.mesafe} m</td><td>${Math.round(o.px)}</td>`+
-       `<td>${son.f_px_tekil[i]||"—"}</td></tr>`;});
+    h+=`<tr><td>${i+1}</td><td>${o.mesafe} m</td>`+
+       `<td>${o.genislik||son.kanat_m} m</td>`+
+       `<td>${Math.round(o.px)}</td><td>${son.f_px_tekil[i]||"—"}</td></tr>`;});
   document.getElementById("liste").innerHTML=h;
   let s="";
   if(son.f_px_kullanilan){
@@ -571,13 +598,20 @@ class _H(BaseHTTPRequestHandler):
             if not (1.0 <= mesafe <= 2000.0):
                 return self._c(False, "mesafe %g m — 1..2000 m arası olmalı"
                                % mesafe)
+            kanat = float(os.environ.get("DOW_OPTIK_KANAT", "1.718"))
+            try:
+                gen = float(g.get("genislik") or kanat)
+            except (TypeError, ValueError):
+                return self._c(False, "cisim genişliği sayı değil")
+            if not (0.01 <= gen <= 50.0):
+                return self._c(False, "cisim genişliği %g m — 0.01..50 m arası"
+                               % gen)
             with _kilit:
                 _D["olcumler"].append({"px": round(px, 1), "mesafe": mesafe,
-                                       "t": time.time()})
+                                       "genislik": gen, "t": time.time()})
             kaydet()
-            kanat = float(os.environ.get("DOW_OPTIK_KANAT", "1.718"))
-            return self._c(True, "✔ ölçüm eklendi: %d px @ %g m  ->  F_PX %.0f"
-                           % (px, mesafe, px * mesafe / kanat))
+            return self._c(True, "✔ %d px @ %g m · cisim %g m  ->  F_PX %.0f"
+                           % (px, mesafe, gen, px * mesafe / gen))
 
         if yol == "/api/ufuk":
             try:

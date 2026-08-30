@@ -120,11 +120,22 @@ class HedefKaynagi:
     def durum(self):
         s = self.son()
         with self._kilit:
+            ham = dict(self._paket) if self._paket else None
             ulasma = (9e9 if self._paket is None
                       else time.monotonic() - self._t)
             veri_yas = (0.0 if self._paket is None
                         else float(self._paket.get("saat_farki", 0.0)) / 1000.0)
+        # ⭐ HAM KONUM — BAYAT OLSA BİLE RAPORLANIR (2026-08-29).
+        #   `son()` bayat paketi None döndürür; bu DOĞRUdur, güdüm bayat
+        #   veriyle nişan almamalı. Ama operatör panelde yalnız "hedef YOK"
+        #   görüyordu ve "paket geliyor ama verisi 26 dakikalık" durumunu
+        #   ayırt edemiyordu. Ham alanlar GÖSTERİM içindir; güdüm bunları
+        #   OKUMAZ — güdümün tek kapısı `son()`tur.
         return {"var": s is not None, "yas": round(self.yas(), 2),
+                "ham_enlem": (ham or {}).get("enlem"),
+                "ham_boylam": (ham or {}).get("boylam"),
+                "ham_irtifa": (ham or {}).get("irtifa_ev"),
+                "ham_hiz": (ham or {}).get("hiz"),
                 # ⭐ İKİSİ AYRI RAPORLANIR: "paket geliyor ama VERİSİ eski"
                 #   durumunu operatör ancak böyle görebilir.
                 "yas_ulasma": round(min(ulasma, 999.0), 2),

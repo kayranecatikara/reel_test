@@ -2935,3 +2935,632 @@ def test_R98_sahte_kipi_BACKEND_ARAMAZ():
     sahte_govde = govde[i_sahte:i_sky]
     assert "_SahtePort()" in sahte_govde
     assert "SkydaggerBag" not in sahte_govde
+
+
+def test_R99_kalibrasyon_HER_OLCUMUN_kendi_genisligini_kullanir():
+    """⭐ Kalibrasyon için Talon ŞART DEĞİL.
+
+    F_PX = w·R/S formülü cismin NE olduğunu değil, KAÇ METRE olduğunu
+    bilmek ister. Genişliği bilinen herhangi bir cisim (cetvel, kapı
+    kanadı) olur — bu, kalibrasyonu kapalı ortamda mümkün kılar.
+
+    ⛔ Ölçümler KARIŞIK cisimlerden gelebilir. Hepsini tek bir varsayılan
+    genişliğe bölmek, farklı cisimlerin ölçümlerini birbirine karıştırır
+    ve F_PX'i sessizce yanlış verir. (29 Ağu 2026'da tam bu oldu: mesaj
+    doğru sayıyı yazıyordu ama rapor 1.718'e bölüyordu.)
+    """
+    from gercek import kamera_ayari as KA
+    F = 230.0
+    olc = [{"px": F * S / R, "mesafe": R, "genislik": S}
+           for (R, S) in ((3.0, 1.0), (5.0, 1.0), (4.0, 1.718), (30.0, 1.718))]
+    f, tekil, sapma = KA.f_px_hesapla(olc, 1.718)
+    assert abs(f - F) < 0.01, "karışık cisimde F_PX %.2f, %.2f bekleniyordu" % (f, F)
+    assert sapma < 0.01, "kusursuz veride sapma %.3f" % sapma
+    for v in tekil:
+        assert abs(v - F) < 0.01
+
+    eski = [{"px": F * 1.718 / 20.0, "mesafe": 20.0}]
+    f2, _, _ = KA.f_px_hesapla(eski, 1.718)
+    assert abs(f2 - F) < 0.01, "geriye dönük uyum bozuldu"
+
+    karisik = [{"px": F * 1.0 / 3.0, "mesafe": 3.0, "genislik": 1.0},
+               {"px": F * 1.718 / 30.0, "mesafe": 30.0, "genislik": 1.718}]
+    f3, tekil3, sapma3 = KA.f_px_hesapla(karisik, 1.718)
+    assert sapma3 < 0.01, (
+        "karışık cisimler ayrışıyor — her ölçüm kendi genişliğini "
+        "kullanmıyor: %s" % tekil3)
+
+
+def test_R100_dedektor_cozunurluk_dikisi():
+    """⛔ Dedektörün piksel sayıları 1920x1080 kadrajda ÖLÇÜLDÜ.
+
+    Gerçek FPV zinciri 640x480 veriyor ve orada `imgsz` sayısının ANLAMI
+    değişiyor: 1920x1080'de imgsz=1920 ölçek 1.0 (NATİF); 640x480'de aynı
+    sayı 3 KAT BÜYÜTME demek — yeni bilgi yok, 8.3 kat bedel (ölçüldü:
+    5.3 ms -> 44.0 ms, RTX 4060).
+
+    Varsayılanlar DEĞİŞMEMELİ (sim davranışı bit bit korunur), ama gerçek
+    kamera değerleri env'den verilebilmeli.
+    """
+    import subprocess
+    kod = ("from dow.gorus import dedektor as D\n"
+           "print(D.IMGSZ_UZAK, D.IMGSZ_YAKIN, D.CONF_MIN, D.YAKIN_ESIK_PX)\n")
+    temiz = {k: v for k, v in os.environ.items()
+             if not k.startswith("DOW_DET_")}
+    c = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=temiz,
+                       capture_output=True, text=True)
+    assert c.returncode == 0, c.stderr
+    p = c.stdout.split()
+    assert int(p[0]) == 1920 and int(p[1]) == 960, "imgsz varsayılanı kaydı"
+    assert float(p[2]) == 0.40, "conf varsayılanı kaydı"
+    assert float(p[3]) == 55.0, "yakın eşiği varsayılanı kaydı"
+
+    ort = dict(temiz, DOW_DET_IMGSZ_UZAK="960", DOW_DET_IMGSZ_YAKIN="640",
+               DOW_DET_CONF="0.35", DOW_DET_YAKIN_ESIK="18")
+    c2 = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=ort,
+                        capture_output=True, text=True)
+    assert c2.returncode == 0, c2.stderr
+    q = c2.stdout.split()
+    assert (int(q[0]), int(q[1])) == (960, 640)
+    assert float(q[2]) == 0.35 and float(q[3]) == 18.0
+
+    kotu = dict(temiz, DOW_DET_CONF="çok")
+    c3 = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=kotu,
+                        capture_output=True, text=True)
+    assert c3.returncode != 0 and "DOW_DET_CONF" in c3.stderr, (
+        "bozuk dedektör ayarı sessizce yok sayılıyor")
+
+    sh = open(os.path.join(REEL, "baslat_drone.sh"), encoding="utf-8").read()
+    for a in ("DOW_MODEL", "DOW_DET_IMGSZ_UZAK", "DOW_DET_IMGSZ_YAKIN",
+              "DOW_DET_YAKIN_ESIK"):
+        assert a in sh, "baslat_drone.sh %s vermiyor" % a
+
+
+def test_R101_dedektor_KANAL_SIRASI_ayarlanabilir_ve_BGR_varsayilan():
+    """⛔⛔ SESSİZ TAM ISKA — 29 Ağu 2026'da sahada yaşandı.
+
+    ultralytics, numpy dizisini BGR kabul eder (cv2.imread gibi).
+    `drone_yki._gorus` eskiden KOŞULSUZ BGR2RGB çeviriyordu. O çeviri sim
+    modeli `talon_v3` için doğruydu — o model aynı çevrilmiş kareler
+    üzerinde eğitilmişti, yani takas eğitime GÖMÜLÜYDÜ.
+
+    Gerçek görüntüyle eğitilen model NORMAL eğitildi ve BGR bekler.
+    Takas edilince turuncu uçak maviye döner. ÖLÇÜLDÜ, aynı kare, 640:
+        BGR -> güven 0.700     RGB -> güven 0.000
+    Panelde "tespit yok" görünüyordu; model kusursuz çalışıyordu. Bu, hiçbir
+    yerde patlamayan, yalnız SONUÇTAN anlaşılan bir hatadır — bekçi şart.
+    """
+    kaynak = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    assert "_DET_RENK" in kaynak, "kanal sırası ayarı kaldırılmış"
+    assert 'os.environ.get("DOW_DET_RENK", "bgr")' in kaynak, (
+        "varsayılan BGR değil — ultralytics'in sözleşmesi budur")
+    # koşulsuz çeviri GERİ GELMEMELİ
+    bas = kaynak.index("def _gorus(")
+    govde = kaynak[bas:bas + 2500]
+    assert 'girdi = kare if _DET_RENK == "bgr"' in govde, (
+        "kanal sırası koşulsuz hâle dönmüş")
+    # geçersiz değer sessizce yutulmamalı
+    assert "'bgr' ya da 'rgb' olmalı" in kaynak
+
+    import subprocess
+    kod = ("import os,sys; sys.path.insert(0,'.')\n"
+           "os.environ['DOW_DET_RENK']='mavi'\n"
+           "import drone_yki\n")
+    c = subprocess.run([sys.executable, "-c", kod], cwd=REEL,
+                       capture_output=True, text=True)
+    assert c.returncode != 0 and "DOW_DET_RENK" in c.stderr, (
+        "geçersiz kanal sırası sessizce kabul ediliyor")
+
+    sh = open(os.path.join(REEL, "baslat_drone.sh"), encoding="utf-8").read()
+    assert "DOW_DET_RENK" in sh, "başlatıcı kanal sırasını vermiyor"
+
+
+def test_R102_hedef_HAM_konumu_BAYAT_olsa_bile_raporlanir():
+    """⛔ OPERATÖR KÖRLÜĞÜ — 29 Ağu 2026'da sahada yaşandı.
+
+    `son()` bayat paketi None döndürür; bu DOĞRUdur — güdüm 26 dakikalık
+    veriyle nişan almamalı. Ama panel yalnız "hedef YOK" yazıyordu ve
+    operatör iki BAMBAŞKA durumu ayırt edemiyordu:
+
+        (a) hiç paket gelmiyor          -> ağ/IP/yayıncı sorunu
+        (b) paket geliyor ama BAYAT     -> uçağın telemetri linki kopuk
+
+    Sahada (b) yaşandı: 2254 paket gelmişti, ulaşma yaşı 0.03 s, ama
+    verinin kendi yaşı 1555 s. Panel "YOK" diyordu ve yanlış yerde
+    arandı. Ham alanlar GÖSTERİM içindir; güdüm bunları OKUMAZ.
+    """
+    from gercek.hedef import HedefKaynagi
+    h = HedefKaynagi()
+    d0 = h.durum()
+    assert d0["n_paket"] == 0 and d0["ham_enlem"] is None, "(a) paket yok"
+
+    # (b) paket geldi ama verisi 1555 saniyelik
+    assert h.besle({"enlem": 41.0033654, "boylam": 28.6551401,
+                    "irtifa_ev": 12.5, "hiz": 3.2, "saat_farki": 1555170})
+    d = h.durum()
+    assert d["var"] is False, "bayat veri GEÇERLİ sayılmamalı"
+    assert h.son() is None, "güdüm bayat veriyi ALMAMALI"
+    assert d["n_paket"] == 1, "paket sayacı görünmeli"
+    assert d["yas_ulasma"] < 0.5 and d["yas_veri"] > 1500, (
+        "iki yaş ayrı raporlanmıyor — (a) ile (b) ayırt edilemez")
+    # ⭐ ham konum GÖSTERİM için var olmalı
+    assert abs(d["ham_enlem"] - 41.0033654) < 1e-9
+    assert abs(d["ham_boylam"] - 28.6551401) < 1e-9
+    assert d["ham_irtifa"] == 12.5 and d["ham_hiz"] == 3.2
+
+    # panel bu alanları GÖSTERMELİ
+    # ⛔ ETİKET DEĞİL DAVRANIŞ sınanır: satır başlıkları yeniden
+    #   düzenlemede değişebilir ("hedef K/D" -> "kuzey / doğu"), ama
+    #   ham alanların EKRANA BASILMASI değişmemeli.
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    assert "hd.ham_enlem" in p and "hd.ham_boylam" in p, (
+        "panel hedefin ham GPS'ini göstermiyor")
+    assert "hh.kuzey" in p and "hh.dogu" in p, (
+        "panel hedefin yerel kuzey/doğusunu göstermiyor")
+    assert "hd.ham_irtifa" in p and "hd.ham_hiz" in p, (
+        "panel hedefin ham irtifa/hızını göstermiyor")
+    assert "BAYAT" in p, "panel bayat durumunu ayrı yazmıyor"
+    assert "hedef_ham_konum" in p, "ham yerel konum hesaplanmıyor"
+    # ⛔ 3B İZE GİRMEMELİ — bayat nokta hayalet iz çizer
+    bas = p.index("const hk=d.hedef_konum")
+    assert "hedef_ham_konum" not in p[bas:bas + 200], (
+        "bayat konum 3B ize besleniyor — hayalet iz çizer")
+
+
+def test_R103_REDDEDILEN_tespit_de_ekranda_gorunur():
+    """⛔ 29 Ağu 2026 — saatler yiyen körlük.
+
+    Dedektör hedefi buluyordu ama `ibvs.gecerli()` reddediyordu (menzil
+    kapısı: 1.5 m < MENZIL_MIN_M 3 m). Panelde HİÇBİR İZ kalmıyordu ve
+    "model çalışmıyor" sanıldı — oysa model kusursuz çalışıyordu.
+
+    Artık reddedilen kutu da KIRMIZI KESİKLİ çiziliyor ve SEBEBİ yazılıyor.
+    Kabul edilenle karışmasın diye kesikli; kabul edilen varken çizilmez.
+    """
+    a = open(os.path.join(KOK, "dow", "ana.py"), encoding="utf-8").read()
+    assert "_ham_kutu" in a and "_ham_sebep" in a, "gösterim kancası yok"
+    # ⛔ GÜDÜM BU ALANLARI OKUMAMALI — yalnız yazılır
+    for satir in a.split("\n"):
+        s2 = satir.strip()
+        if "_ham_kutu" in s2 or "_ham_sebep" in s2:
+            assert s2.startswith("self._ham_") or s2.startswith("#"), (
+                "güdüm ham gösterim alanını OKUYOR: %s" % s2)
+
+    y = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    assert 'PANEL._D["ham_kutu"]' in y, "ham kutu panele geçmiyor"
+    # ⛔ Ham kutu ARTIK HER ZAMAN gönderilir (menzil hesabı için gerekli);
+    #   "ikisi üst üste çizilmesin" kuralı ÇİZİM tarafına taşındı.
+    #   Bekçi de oraya bakar — kural kaybolmasın, yeri değişsin.
+
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    assert "_kesikli_dikdortgen" in p, "kesikli çizim yok"
+    assert 'RED: %s%s' in p, "red sebebi ekrana yazılmıyor"
+    bas = p.index('ham = _D.get("ham_kutu")')
+    assert "not kutu" in p[bas:bas + 120], (
+        "kabul edilen kutu varken ham kutu da çiziliyor")
+
+
+def test_R104_panel_KRITIK_VERILERI_gosteriyor():
+    """⛔ Telemetri ZATEN çözülüyordu ama panele ÇIKMIYORDU (29 Ağu 2026).
+
+    En ciddisi PİL: `crsf.py` gerilim/yüzde/akım/mAh çözüyor, panel hiç
+    göstermiyordu — operatör drone'un bataryasını GÖREMEDEN uçuyordu.
+    İkincisi MENZİL: kutu boyutundan hesaplanıyor ama metre olarak hiç
+    yazılmıyordu; 3 m kapısı yüzünden kutu reddedilirken sebebi anlamak
+    saatler aldı.
+    """
+    b = open(os.path.join(REEL, "gercek", "baglanti.py"), encoding="utf-8").read()
+    for alan in ("pil_v", "pil_yuzde", "pil_akim", "pil_mah",
+                 "link_asagi_lq", "link_snr", "link_rf_kipi"):
+        assert '"%s"' % alan in b, "saglik() %s vermiyor" % alan
+
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    # pil şeridi
+    assert "pil_dolu" in p and "pilcubuk" in p, "pil şeridi yok"
+    assert "VERİ YOK" in p, "pil verisi yokken uyarmıyor"
+    # üç blok
+    for t in ("telem_ucus", "telem_hedef", "telem_sistem"):
+        assert t in p, "%s bloğu yok" % t
+    assert "telem_sistem" in p and 'style="display:none"' in p, (
+        "sistem bloğu varsayılan KAPALI değil")
+    # menzil metre olarak
+    assert "görsel menzil" in p, "menzil metre olarak yazılmıyor"
+    # ⛔ menzil sabitleri JS'e YAZILMAMALI — env'den değişiyor
+    assert 'd["optik"]' in p, "optik sabitleri sunucudan gönderilmiyor"
+    bas = p.index("const MC=op.menzil_c")
+    govde = p[bas:bas + 400]
+    assert "op.menzil_min" in govde and "op.menzil_max" in govde, (
+        "menzil kapıları JS'e SABİT yazılmış — DOW_OPTIK_MENZIL_C değişince "
+        "panel yalan söyler")
+
+
+def test_R105_planlayici_TALON_telemetrisini_gosterir():
+    """Harita sekmesindeyken uçağın ne yaptığı görünmeliydi.
+
+    Planlayıcı zaten MAVLink dinliyordu ama yalnız konum/mod alıyordu;
+    hız, irtifa, gaz, pil, uydu ekranda YOKTU ve operatör harita
+    sekmesindeyken Talon'un durumunu göremiyordu.
+    """
+    p = open(os.path.join(REEL, "talon", "gorev_plani.py"),
+             encoding="utf-8").read()
+    for t in ("VFR_HUD", "GPS_RAW_INT", "SYS_STATUS", "MISSION_CURRENT"):
+        assert t in p, "planlayıcı %s dinlemiyor" % t
+    for a in ("hiz", "irtifa", "gaz", "pil_v", "pil_yuzde", "uydu",
+              "tirmanis", "aktif_oge"):
+        assert '"%s"' % a in p, "%s toplanmıyor" % a
+    assert "t_telem" in p and "t_pil" in p, "telemetri kutusu yok"
+    # ⛔ HÜCRE SAYISI TAHMİN EDİLMEMELİ — 6S varsayımı yanlış pil yüzdesi verir
+    bas = p.index('if(d.pil_v!=null)')
+    assert "d.pil_yuzde!=null?d.pil_yuzde:0" in p[bas:bas + 400], (
+        "pil yüzdesi gerilimden TAHMİN ediliyor — hücre sayısı bilinmiyor")
+
+
+def test_R106_vendored_arayuz_FIX_GECISINDE_plani_tazeler():
+    """⛔ 29 Ağu 2026'da iki kez zaman kaybettirdi.
+
+    Yukarı akışta `planla()` yalnız kullanıcı girdisinde çalışıyor.
+    Sayfa GPS fix'ten ÖNCE açılırsa "GPS fix yok (fix=0, 0 uydu)" uyarısı
+    ve `GÖREVİ YÜKLE` kilidi DONMUŞ kalıyor — üst şeritte `3D-11` yazarken
+    bile. Yerel düzeltme: fix GEÇERSİZ->GEÇERLİ geçişinde bir kez planla().
+    """
+    h = open(os.path.join(REEL, "talon", "arayuz", "gcs", "static",
+                          "index.html"), encoding="utf-8").read()
+    assert "_fixVardi" in h, "fix geçişi düzeltmesi kaldırılmış"
+    bas = h.index("_fixVardi")
+    govde = h[bas - 400:bas + 400]
+    assert "planla()" in govde, "geçişte planla() çağrılmıyor"
+    assert "T.gps_fix" in govde, "fix durumuna bakılmıyor"
+    # ⛔ vendored koddaki HER değişiklik KAYNAK.md'de yazılı olmalı
+    k = open(os.path.join(REEL, "talon", "arayuz", "KAYNAK.md"),
+             encoding="utf-8").read()
+    assert "_fixVardi" in k, (
+        "vendored arayüzde değişiklik var ama KAYNAK.md'de yazmıyor — "
+        "yukarı akıştan yeniden çekilince sessizce kaybolur")
+
+
+def test_R107_ucus_kaydi_TARAYICIDAN_BAGIMSIZ_ve_hassasiyeti_bozmaz():
+    """⛔ İKİ TUZAK, ikisi de yakalandı (30 Ağu 2026).
+
+    (a) İTME (push) kipinde kayıt yalnız BİR TARAYICI durum sorduğunda
+        yazıyordu. Tarayıcı kapalıyken uçuş HİÇ kaydedilmiyordu — yani
+        kaydın var olma sebebi ortadan kalkıyordu. Artık ÇEKME (pull):
+        kendi ipliğinde, kendi hızında, durumu kendisi çeker.
+
+    (b) `%.4f` GPS'i BOZUYORDU: enlem 41.0033654 -> 41.0034, ~11 m
+        çözünürlük. Kayıt, kaydettiği şeyden daha kaba olamaz. Ayrıca
+        `%.10g` unix zaman damgasının kesirini yutuyordu (1788080812.27
+        -> 1788080812), 10 Hz kayıtta 0.27 s körlük.
+    """
+    from gercek.kayit import Kayitci, SUTUNLAR, _cek
+
+    # (b) hassasiyet
+    assert Kayitci._alan({"x": 41.0033654}, "x") == "41.0033654", "GPS bozuluyor"
+    assert Kayitci._alan({"x": 28.6551401}, "x") == "28.6551401"
+    assert Kayitci._alan({"x": 1788080812.27}, "x") == "1788080812.27", (
+        "zaman damgasının kesri kayboluyor")
+    assert Kayitci._alan({"x": True}, "x") == "1"
+    assert Kayitci._alan({"x": None}, "x") == ""
+    # CSV'yi bozacak karakterler temizlenmeli
+    assert "," not in Kayitci._alan({"x": "a,b"}, "x")
+
+    # yol çekme: sözlük ve liste
+    assert _cek({"a": {"b": 5}}, "a.b") == 5
+    assert _cek({"k": [1, 2, 3]}, "k.1") == 2
+    assert _cek({"a": None}, "a.b") is None
+    assert _cek({}, "yok.yok") is None
+
+    # sütunlar benzersiz ve kritik alanlar var
+    adlar = [a for a, _ in SUTUNLAR]
+    assert len(adlar) == len(set(adlar)), "tekrarlı sütun adı"
+    for gerekli in ("t", "kaynak", "pil_v", "hedef_enlem", "hedef_boylam",
+                    "kutu_w", "ham_sebep", "kilit_s"):
+        assert gerekli in adlar, "%s sütunu yok" % gerekli
+
+    # (a) çekme kipi
+    k = open(os.path.join(REEL, "gercek", "kayit.py"), encoding="utf-8").read()
+    assert "_cekme_dongusu" in k, "çekme ipliği yok"
+    assert "uretici" in k, "üretici geri çağrısı yok"
+    y = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    assert "uretici=PANEL._durum" in y, "kayıt paneli çekmiyor"
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    assert '_D["kayit"].yaz(' not in p, (
+        "panel hâlâ İTİYOR — tarayıcı kapalıyken kayıt durur")
+    # kuyruk dolarsa BLOKLAMAMALI
+    assert "put_nowait" in k and "queue.Full" in k, (
+        "kayıt kuyruğu bloklayabilir — disk yavaşlarsa uçuş gecikir")
+
+
+def test_R108_on_ucus_listesi_HAKEMI_DEGISTIRMEZ():
+    """⛔ Liste bir KOLAYLIKtır, emniyet kapısı DEĞİL.
+
+    `komut.py`'deki DÖRT ŞART (panel OTONOM · pilot izni · taze setpoint ·
+    kumanda bağı) kanıtlanmış emniyet kapısıdır ve R39 ile korunur. Ön
+    uçuş listesi panelde OTONOM düğmesini kilitler — yanlışlıkla basmayı
+    engeller. Hakeme beşinci bir şart EKLENMEZ.
+
+    Arıza yönü güvenli: liste bozulursa otonom açılmaz, elle uçuşa düşülür.
+    Ama ZORLAMA yolu açık kalmalı — sahada yanlış kırmızı yanan bir madde
+    yüzünden otonomdan mahrum kalmak daha tehlikelidir.
+    """
+    from gercek import kontrol_listesi as KL
+    bos = KL.degerlendir({})
+    assert bos["hazir"] is False and len(bos["kalan"]) >= 6
+
+    tam = KL.degerlendir({
+        "arac": {"canli": True, "uydu": 14, "koken": True, "pil_v": 24.1},
+        "hedef": {"var": True, "n_paket": 500},
+        "kamera": {"acik": True, "yas": 0.05},
+        "komut": {"kmd_takili": True},
+        "gorsel_aktif": True})
+    assert tam["hazir"] is True and tam["kalan"] == []
+
+    # tek tek düşürme — her zorunlu madde listeyi düşürmeli
+    for eksilt, yol in (("gps", ("arac", "uydu", 4)),
+                        ("koken", ("arac", "koken", False)),
+                        ("hedef", ("hedef", "var", False)),
+                        ("kamera", ("kamera", "acik", False))):
+        d = {"arac": {"canli": True, "uydu": 14, "koken": True, "pil_v": 24.1},
+             "hedef": {"var": True, "n_paket": 500},
+             "kamera": {"acik": True, "yas": 0.05},
+             "komut": {"kmd_takili": True}, "gorsel_aktif": True}
+        d[yol[0]][yol[1]] = yol[2]
+        r = KL.degerlendir(d)
+        assert not r["hazir"] and eksilt in r["kalan"], (
+            "%s düşünce liste hâlâ hazır diyor" % eksilt)
+
+    # ⛔ HAKEME DOKUNULMAMIŞ OLMALI
+    ko = open(os.path.join(REEL, "gercek", "komut.py"), encoding="utf-8").read()
+    assert "kontrol_listesi" not in ko, (
+        "ön uçuş listesi HAKEME sızmış — dört şartlı emniyet kapısı R39 ile "
+        "kanıtlandı, beşinci şart eklenmez")
+    # panel kilidi + zorlama yolu
+    # ⛔ ETİKET DEĞİL DAVRANIŞ: değişken adı yeniden düzenlemede değişir
+    #   (`kl` -> `kls`), ama OTONOM düğmesinin listeye BAĞLI olması değişmez.
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    assert "d.kontrol" in p, "panel kontrol listesini okumuyor"
+    bas = p.index("const bOto=document.getElementById(\"b_otonom\")")
+    govde = p[bas:bas + 500]
+    assert "bOto.disabled" in govde and ".hazir" in govde, (
+        "OTONOM düğmesi kontrol listesine göre kilitlenmiyor")
+    assert "_klZorla" in govde, "zorlama bayrağı kilide girmiyor"
+    assert "_klZorla" in p and "ondblclick" in p, (
+        "zorlama yolu yok — yanlış kırmızı yanan madde otonomdan mahrum bırakır")
+
+
+def test_R109_panel_JS_SOZDIZIMI_gecerli():
+    """⛔ 30 Ağu 2026: `kl` adı iki kez tanımlandı (biri kilit, biri kontrol
+    listesi) ve TÜM panel JS'i çöktü — sayfa açılıyor ama hiçbir şey
+    güncellenmiyordu. Python tarafı kusursuz, ekran ölü.
+
+    Panelin JS'i Python string'i içinde yaşıyor; hiçbir derleyici onu
+    denetlemiyor. Bu bekçi, `let`/`const` çakışmasını ve benzeri sözdizimi
+    hatalarını yakalar.
+    """
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node yok — JS sözdizimi denetlenemiyor")
+
+    for dosya in ("gercek/panel.py", "talon/gorev_plani.py"):
+        kaynak = open(os.path.join(REEL, dosya), encoding="utf-8").read()
+        js = "\n".join(re.findall(r"<script>(.*?)</script>", kaynak, re.S))
+        assert js.strip(), "%s içinde JS bulunamadı" % dosya
+        with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8",
+                                         delete=False) as f:
+            f.write(js)
+            yol = f.name
+        try:
+            c = subprocess.run([node, "--check", yol],
+                               capture_output=True, text=True, timeout=30)
+            assert c.returncode == 0, (
+                "%s JS sözdizimi HATALI:\n%s" % (dosya, c.stderr[:500]))
+        finally:
+            os.unlink(yol)
+
+
+def test_R110_MODELIN_HAM_CIKTISI_her_zaman_ekrana_ulasir():
+    """⛔⛔ 29-30 Ağu 2026'da SAATLER kaybettiren körlük.
+
+    Model hedefi görüyordu ama ekranda HİÇBİR İZ yoktu, çünkü arada İKİ
+    süzgeç var ve ikisi de haklı:
+      1. `_yerel_bul`  — adayları YERELLİKLE eler (beklenen yerin dışında)
+      2. `gecerli()`   — menzil/boyut/kadraj ile eler (3 m altı, 50 m üstü)
+    İkisi de güdüm için doğru. Ama operatör "model çalışmıyor" sanıyor.
+
+    KURAL: hedef KAÇ METREDE olursa olsun, model bir şey gördüyse ekranda
+    iz KALIR. Kabul edilip edilmediği AYRI renkle söylenir:
+        yeşil/turuncu düz  -> güdüm KABUL etti
+        kırmızı kesikli    -> model gördü, güdüm REDDETTİ (+ sebep)
+    """
+    import sys as _s
+    sys.path.insert(0, KOK)
+    from dow.gorus.dedektor import Dedektor
+
+    # --- (1) dedektör HAM çıktıyı saklıyor mu ---
+    d = Dedektor.__new__(Dedektor)          # model yüklemeden
+    d.son_ham = None
+    d.son_ham_n = 0
+    Dedektor._ham_kaydet(d, [])
+    assert d.son_ham is None and d.son_ham_n == 0
+    Dedektor._ham_kaydet(d, [(10, 20, 30, 40, 0.3), (50, 60, 70, 80, 0.9)])
+    assert d.son_ham[4] == 0.9, "en yüksek güvenli kutu seçilmiyor"
+    assert d.son_ham_n == 2, "aday sayısı sayılmıyor"
+
+    # --- (2) `_tara`nın HER İKİ dönüş noktasında kaydediliyor mu ---
+    k = open(os.path.join(KOK, "dow", "gorus", "dedektor.py"),
+             encoding="utf-8").read()
+    bas = k.index("def _tara(")
+    son = k.index("def _ham_kaydet(")
+    assert k[bas:son].count("self._ham_kaydet(kutular)") == 2, (
+        "_tara'nın bir dönüş yolunda ham kutu kaydedilmiyor — pencere "
+        "kolunda ya da tam kadraj kolunda ekran kör kalır")
+
+    # --- (3) ana.py zinciri: d -> son_ham -> yok ---
+    a = open(os.path.join(KOK, "dow", "ana.py"), encoding="utf-8").read()
+    bas = a.index("_sh = getattr(self.det")
+    govde = a[bas:bas + 700]
+    assert 'self._ham_sebep = "yerel_eledi"' in govde, (
+        "yerellik süzgeci düşürünce modelin gördüğü kutu GÖSTERİLMİYOR")
+    assert 'self._ham_sebep = "tespit_yok"' in govde
+    # ⛔ güdüm bu alanları OKUMAMALI
+    for satir in a.split("\n"):
+        t = satir.strip()
+        if "_ham_kutu" in t or "_ham_sebep" in t:
+            assert t.startswith("self._ham_") or t.startswith("#"), (
+                "güdüm gösterim alanını OKUYOR: %s" % t)
+
+    # --- (4) panel: ham kutu HER ZAMAN gönderilir, menzil ondan da çıkar ---
+    y = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    assert 'PANEL._D["ham_kutu"] = list(hk[:5]) if hk else None' in y, (
+        "ham kutu yalnız kabul yokken gönderiliyor — menzil hesabı için "
+        "her zaman lazım")
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    assert "const kt=kabulK||hamK" in p, (
+        "menzil yalnız KABUL EDİLEN kutudan hesaplanıyor — reddedilende "
+        "operatör mesafeyi göremez, asıl teşhis orada")
+
+    # --- (5) sahte kipte de kamera açılabilmeli (tezgâhta sınama) ---
+    assert "_kam_istendi" in y and '"--kamera" in sys.argv' in y, (
+        "--sahte kipte kamera açılamıyor — görüş yolu yalnız tam donanımla "
+        "sınanabilir hâle döner")
+
+
+def test_R111_model_yolu_CALISMA_DIZININDEN_BAGIMSIZ():
+    """⛔⛔ EN SİNSİ HATA — 30 Ağu 2026.
+
+    `MODEL_YOLU` göreli yazılıydı: "modeller/<ad>.pt". `baslat_drone.sh`
+    çalışma dizinini `reel/` yapıyor ve model orada DEĞİL, depo kökünde.
+    Sonuç: dedektör HİÇ yüklenmiyordu, açılışta "görsel KAPALI" satırı
+    akıp gidiyordu ve ekranda hiç kutu çıkmıyordu.
+
+    ⚠ NİYE SİNSİ: depo kökünden çalıştırılan HER TEST çalışıyordu. Hata
+    yalnız başlatıcıdan koşunca ortaya çıkıyordu — yani tam da sahada.
+    """
+    import subprocess
+    kod = ("from dow.gorus.dedektor import MODEL_YOLU\n"
+           "import os\n"
+           "print(MODEL_YOLU, os.path.isabs(MODEL_YOLU),"
+           " os.path.exists(MODEL_YOLU))\n")
+    # ⭐ ÜÇ FARKLI ÇALIŞMA DİZİNİNDEN aynı yolu vermeli
+    ort = dict(os.environ, DOW_MODEL="talon_v3",
+               PYTHONPATH=KOK + ":" + os.environ.get("PYTHONPATH", ""))
+    yollar = []
+    for cwd in (KOK, REEL, os.path.join(REEL, "talon")):
+        c = subprocess.run([sys.executable, "-c", kod], cwd=cwd, env=ort,
+                           capture_output=True, text=True)
+        assert c.returncode == 0, "%s: %s" % (cwd, c.stderr[:300])
+        yol, mutlak, var = c.stdout.rsplit(" ", 2)
+        assert mutlak.strip() == "True", (
+            "%s içinden yol GÖRELİ: %s" % (cwd, yol))
+        assert var.strip() == "True", (
+            "%s içinden model BULUNAMIYOR: %s" % (cwd, yol))
+        yollar.append(yol)
+    assert len(set(yollar)) == 1, (
+        "çalışma dizinine göre FARKLI yol üretiliyor: %s" % set(yollar))
+
+    # açıkça tam yol verilebilmeli
+    d = open(os.path.join(KOK, "dow", "gorus", "dedektor.py"),
+             encoding="utf-8").read()
+    assert "DOW_MODEL_YOL" in d, "tam yol geçidi yok"
+
+    # ⛔ başlatıcı çıktıyı TAMPONLAMAMALI — açılış teşhisleri kaybolur
+    sh = open(os.path.join(REEL, "baslat_drone.sh"), encoding="utf-8").read()
+    assert "python3 -u drone_yki.py" in sh, (
+        "başlatıcı -u vermiyor — çıktı dosyaya yönlendirilince açılış "
+        "teşhisleri (kamera, model, kayıt) görünmez")
+
+
+def test_R112_durum_HAM_alanlarini_yayinlar():
+    """⛔ `_cizim()` ham kutuyu VİDEONUN ÜSTÜNE çiziyordu ama durum
+    sözlüğüne HİÇ girmiyordu: panelin menzil/sebep satırları ve UÇUŞ
+    KAYDI boş kalıyordu. Ekranda kutu var, kayıtta yok."""
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    bas = p.index('def _durum()')
+    son = p.index("    return d", bas)
+    govde = p[bas:son]
+    assert 'd["ham_kutu"]' in govde, "_durum() ham kutuyu yayınlamıyor"
+    assert 'd["ham_sebep"]' in govde, "_durum() red sebebini yayınlamıyor"
+    # kayıt sütunları da bunlara bağlı
+    from gercek.kayit import SUTUNLAR
+    adlar = [a for a, _ in SUTUNLAR]
+    for a in ("ham_w", "ham_conf", "ham_sebep"):
+        assert a in adlar, "%s kayıt sütunu yok" % a
+
+
+def test_R113_konsol_gurultusu_ve_TEMIZ_KAPANIS():
+    """⛔ ÜÇ AYRI SAHA SORUNU (30 Ağu 2026, hepsi yaşandı).
+
+    (a) `half` ultralytics 8.4'te kullanımdan kalktı ve HER ÇIKARIMDA
+        uyarı basıyor. 130 FPS'te konsol saniyede yüzlerce satırla
+        doluyor ve AÇILIŞ TEŞHİSLERİ (dedektör yüklendi mi, kamera hangi
+        cihaz) boğuluyor. Ölçüldü: bayrak zaten işe yaramıyor
+        (fp32 5.3 ms · "fp16" 5.2 ms).
+
+    (b) `exec` kabuğu YERİNE GEÇER; kabuk ölünce `trap ... EXIT` HİÇ
+        çalışmaz. Sahte backend Ctrl+C'den sonra yaşamaya devam edip
+        terminale RC satırı basıyor ve 8766'yı tutuyordu.
+
+    (c) İkinci Ctrl+C kapanış yolunu KESİYORDU: `kayitci.dur()` içinde
+        traceback basıp kalan temizlik (araç komutlarını bırakma)
+        atlanıyordu.
+    """
+    d = open(os.path.join(KOK, "dow", "gorus", "dedektor.py"),
+             encoding="utf-8").read()
+    # (a) half yalnız DESTEKLENİYORSA geçilmeli
+    assert "HALF_GECERLI" in d, "half destek denetimi yok"
+    assert d.count('"half": DetCfg.FP16') == 2, (
+        "half koşulsuz geçiliyor — her çıkarımda uyarı basar")
+    assert "half=DetCfg.FP16" not in d, "koşulsuz half çağrısı kalmış"
+
+    # (b) sahte backend'de exec KULLANILMAMALI
+    sh = open(os.path.join(REEL, "baslat_drone.sh"), encoding="utf-8").read()
+    bas = sh.index('if [ "$SAHTE_BACKEND" = "1" ]; then\n    python3 -u drone_yki')
+    # ⛔ pencere DALIN SONUNDA biter; sonraki satırdaki gerçek `exec`
+    #   (gerçek backend yolu) yanlışlıkla yakalanmasın.
+    govde = sh[bas:sh.index("\nfi\n", bas)]
+    assert "exec" not in govde, (
+        "sahte backend dalında exec var — trap çalışmaz, backend artık kalır")
+    assert 'kill "$SAHTE_PID"' in govde, "sahte backend kapatılmıyor"
+
+    # (c) kapanış ikinci Ctrl+C'ye dayanmalı
+    k = open(os.path.join(REEL, "gercek", "kayit.py"), encoding="utf-8").read()
+    bas = k.index("    def dur(self):")
+    assert "except KeyboardInterrupt" in k[bas:bas + 900], (
+        "kayıt kapanışı ikinci Ctrl+C'de asılıyor")
+    y = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    bas = y.index('print("\\n  kapatılıyor...")')
+    assert "except KeyboardInterrupt" in y[bas:bas + 600], (
+        "kapanış yolu kesintiye uğrayabilir — araç komutları bırakılmadan "
+        "çıkılır")
+
+
+def test_R114_kabul_esikleri_ENV_ile_ayarlanabilir():
+    """Eşikler SİM MODELİYLE (talon_v3) ölçüldü; gerçek modelde
+    (tayarti_v1) henüz ölçülmedi. Gerçek uçuş kaydından `ham_sebep`
+    sayılıp eşik düzeltilebilmeli — sabit kodlu kalırsa her ayar için
+    kaynak değiştirmek gerekir."""
+    import subprocess
+    kod = ("from dow.gudum.ibvs import IbvsCfg as C\n"
+           "print(C.CONF_MIN, C.BOYUT_MIN_PX, C.YEREL_CONF_MIN)\n")
+    temiz = {k: v for k, v in os.environ.items()
+             if k not in ("DOW_CONF_MIN", "DOW_BOYUT_MIN_PX", "DOW_YEREL_CONF")}
+    c = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=temiz,
+                       capture_output=True, text=True)
+    assert c.returncode == 0, c.stderr
+    a, b, y = [float(x) for x in c.stdout.split()]
+    assert a == 0.40 and b == 8.0 and y == 0.20, "varsayılanlar kaydı"
+
+    ort = dict(temiz, DOW_CONF_MIN="0.25", DOW_BOYUT_MIN_PX="5")
+    c2 = subprocess.run([sys.executable, "-c", kod], cwd=KOK, env=ort,
+                        capture_output=True, text=True)
+    a2, b2, _ = [float(x) for x in c2.stdout.split()]
+    assert a2 == 0.25 and b2 == 5.0, "env ezme çalışmıyor"
+
+    # ⛔ TARAMA eşiği KABUL eşiğinden DÜŞÜK olmalı, yoksa yerellik
+    #   süzgecinin eleyeceği aday hiç bulunmaz ve kapı anlamsızlaşır.
+    assert y < a, ("tarama eşiği (%.2f) kabul eşiğinden (%.2f) düşük değil"
+                   % (y, a))

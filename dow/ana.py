@@ -86,6 +86,8 @@ class Beyin:
         self._cikarim_yapildi = True   # çıkarım bu tikte koştu mu (sayaç kapısı)
         self._kopru = None             # T5: son kutunun ATALET yönü
         self._yerel_aday = 0           # §5.1 mekanizma (T4)
+        self._ham_kutu = None          # GÖSTERİM — güdüm okumaz
+        self._ham_sebep = ""           # GÖSTERİM — güdüm okumaz
         self._yerel_kayip = 0          # ardışık kapı başarısızlığı
         self._yerel_uygun = 0
         if hasattr(self, "iz"): self.iz.sifirla()
@@ -117,6 +119,8 @@ class Beyin:
         self._cikarim_yapildi = True   # çıkarım bu tikte koştu mu (sayaç kapısı)
         self._kopru = None             # T5: son kutunun ATALET yönü
         self._yerel_aday = 0           # §5.1 mekanizma (T4)
+        self._ham_kutu = None          # GÖSTERİM — güdüm okumaz
+        self._ham_sebep = ""           # GÖSTERİM — güdüm okumaz
         self._yerel_kayip = 0          # ardışık kapı başarısızlığı
         self._yerel_uygun = 0
         if hasattr(self, "iz"): self.iz.sifirla()
@@ -194,6 +198,28 @@ class Beyin:
         #   ilerletir. Kabul mantigi SATIR SATIR aynidir; yalniz erken
         #   donus yerine `kabul = None` ile asagiya dusulur.
         kabul = None
+        # ⭐ GÖSTERİM KANCASI (2026-08-29) — GÜDÜM BUNU OKUMAZ.
+        #   Dedektör hedefi buluyor ama `gecerli()` reddediyorsa panelde
+        #   HİÇBİR İZ kalmıyordu; "model çalışmıyor" sanılıp saatler
+        #   kaybedildi (gerçek sebep menzil kapısıydı: 1.5 m < 3 m).
+        #   Bu iki alan yalnız panele gider; hiçbir güdüm dalı okumaz,
+        #   `araclar/denklik.py` bit bit aynılığı doğrular.
+        # ⭐ HAM KUTU ZİNCİRİ (GÖSTERİM — güdüm okumaz):
+        #     d varsa            -> güdümün elediği kutu
+        #     d yok, det.son_ham -> YERELLİK süzgeci düşürmüş; model gördü
+        #     ikisi de yok       -> model gerçekten bir şey görmedi
+        #   Amaç: hedef KAÇ METREDE olursa olsun, model bir şey gördüyse
+        #   ekranda İZ KALSIN. Kabul edilip edilmediği ayrı renkle söylenir.
+        _sh = getattr(self.det, "son_ham", None)
+        if d is not None:
+            self._ham_kutu = d
+            self._ham_sebep = ""
+        elif _sh is not None:
+            self._ham_kutu = _sh
+            self._ham_sebep = "yerel_eledi"
+        else:
+            self._ham_kutu = None
+            self._ham_sebep = "tespit_yok"
         if d is not None:
             cx, cy, w, h, conf = d
             # O-A: terminal sureklilik istisnasi icin SON KABUL EDILEN
@@ -208,6 +234,7 @@ class Beyin:
                    if self._son_tespit else None)
             _sy = (t - self._son_tespit_t) if self._son_tespit else None
             ok, _sebep = ibvs.gecerli(cx, cy, w, h, conf, son_w=_sw, son_yas=_sy)
+            self._ham_sebep = "" if ok else (_sebep or "red")   # GÖSTERİM
             if ok:
                 if _sebep == "terminal":
                     self._terminal_kabul += 1     # S5.1 MEKANIZMA SUTUNU

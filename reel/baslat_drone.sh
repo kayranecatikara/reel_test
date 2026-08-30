@@ -50,7 +50,63 @@ export DOW_CEV_Y_ISARET="${DOW_CEV_Y_ISARET:-+1.0}"
 # ⛔ "oto": yakalama kartını KENDİ BULUR. Varsayılan 0 iken panelde
 #   dizüstünün DAHİLİ kamerası çıkıyordu (sahada görüldü 2026-08-29).
 #   Elle seçmek gerekirse:  DOW_KAM_KAYNAK=/dev/video2 ./baslat_drone.sh
-export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-oto}"
+
+# ---- DEDEKTÖR (YOLO) -------------------------------------------------------
+# ⭐ GERÇEK GÖRÜNTÜYLE EĞİTİLMİŞ MODEL (2026-08-29)
+#   modeller/tayarti_v1.pt · yolo26s · tek sınıf "tayarti" · 100 epoch
+#   ⚠ imgsz=640 ile EĞİTİLDİ. Sim modeli (talon_v3) 960 ile eğitilmişti.
+export DOW_MODEL="${DOW_MODEL:-tayarti_v1}"
+
+# ⛔ ÇÖZÜNÜRLÜK — sim sayıları OLDUĞU GİBİ KULLANILAMAZ.
+#
+#   Sim kadrajı 1920x1080'di ve orada imgsz=1920 demek ölçek katsayısı
+#   TAM 1.0, yani NATİF piksel demekti. Gerçek FPV zinciri 640x480 veriyor;
+#   orada imgsz=1920 demek 3 KAT BÜYÜTME — yeni bilgi eklemez, yalnız
+#   pahalıdır. ÖLÇÜLDÜ (RTX 4060, 640x480 kare, yolo26s):
+#
+#       imgsz   ms/kare   FPS
+#         640      5.3    189     <- modelin eğitim boyutu, karenin natifi
+#         960      9.1    110
+#        1280     16.7     60
+#        1920     44.0     23     <- sim varsayılanı, 8.3 KAT yavaş
+#
+#   ⛔ SEÇİM DÜZELTİLDİ 2026-08-29 — İLK SEÇİM YANLIŞTI, ÖLÇÜMLE ÇÜRÜDÜ.
+#
+#   Önce "uzak 960" koymuştum: küçük hedefi büyütmek ağın öznitelik
+#   haritasında daha çok piksel verir diye. GERÇEK KAREDE ÖLÇÜLDÜ
+#   (Talon kadrajda, 259 px genişliğinde):
+#
+#       imgsz    güven
+#         640    0.746    ✔ eşiğin (0.40) ÜSTÜNDE
+#         960    0.266    ✗ eşiğin ALTINDA -> panel kutu ÇİZMEZ
+#        1920    0.299    ✗
+#
+#   Model imgsz=640 ile eğitildi ve büyütme onu BOZUYOR. Sim'deki
+#   "büyük imgsz daha iyi" bulgusu 1920x1080 NATİF kaynak içindi;
+#   640 genişlikte kaynakta büyütmenin ekleyeceği bilgi YOK.
+#
+#   ⛔ AYRICA KİLİTLENME VARDI: kutu bulunamayınca `_son_w = 0` kalır ve
+#     uyarlanabilir kural bunu "uzak" sayıp DAİMA uzak kolunu seçer.
+#     Uzak kol 960 iken hiç tespit olmuyor -> `_son_w` sıfırda kalıyor ->
+#     sonsuza kadar 960. Çıkışı yok. İki kolu da 640 yapmak bunu bitirir.
+export DOW_DET_IMGSZ_UZAK="${DOW_DET_IMGSZ_UZAK:-640}"
+export DOW_DET_IMGSZ_YAKIN="${DOW_DET_IMGSZ_YAKIN:-640}"
+
+# ⛔ YAKIN/UZAK GEÇİŞ EŞİĞİ de 1920 genişlikte ölçüldü (55 px ≈ 18 m).
+#   640 genişlikte AYNI fiziksel hedef 3 kat küçük görünür -> 55/3 ≈ 18 px.
+#   Eşik düzeltilmezse "yakın" kolu HİÇ devreye girmez.
+export DOW_DET_YAKIN_ESIK="${DOW_DET_YAKIN_ESIK:-18}"
+
+# ⛔ KANAL SIRASI — ultralytics numpy dizisini BGR kabul eder.
+#   `tayarti_v1` NORMAL eğitildi -> BGR ister.
+#   Sim modeli `talon_v3` çevrilmiş karelerle eğitilmişti -> RGB isterdi.
+#   ÖLÇÜLDÜ, aynı kare, imgsz 640:  BGR 0.700  ·  RGB 0.000
+#   Sim modeline dönersen:  DOW_DET_RENK=rgb DOW_MODEL=talon_v3 ...
+export DOW_DET_RENK="${DOW_DET_RENK:-bgr}"
+
+# ⚠ FP16 ARTIK İŞE YARAMIYOR: ultralytics 8.4'te `half` kullanımdan kalktı
+#   ve sessizce yok sayılıyor (ölçüldü: fp32 5.3 ms, "fp16" 5.2 ms — fark
+#   yok). Simde 1.6 kat kazandırıyordu. 5-9 ms'de önemi kalmadı, kovalanmadı.
 
 # ---- KAMERA OPTİĞİ ---------------------------------------------------------
 # ⛔⛔ ŞU AN SİMÜLASYON DEĞERLERİYLE UÇUYOR — HENÜZ ÖLÇÜLMEDİ.
@@ -71,12 +127,26 @@ export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-oto}"
 #   ⚠ Ölçümü HANGİ çözünürlükte yaptıysan uçuşta da o kullanılmalı; F_PX
 #     çözünürlükle ölçeklenir. drone_yki.py uyuşmazlıkta yüksek sesle uyarır.
 #
-# Ölçtükten sonra bu satırların yorumunu kaldır:
-# export DOW_OPTIK_W=1920
-# export DOW_OPTIK_H=1080
-# export DOW_OPTIK_F_PX=540.4
-# export DOW_OPTIK_TILT=26.50
-# export DOW_OPTIK_MENZIL_C=997.0
+# ⭐ UYGULANDI 2026-08-29 — kaynak: ÜRETİCİ SPEC'İ (ölçüm DEĞİL)
+#   Kullanıcı bildirdi: FOV 125°, montaj TILT 25°, kart 640x480.
+#   F_PX = (yarı_köşegen)/tan(FOV/2) = 400/tan(62.5°) = 208.2
+#     (KÖŞEGEN kabul edildi — FPV üreticileri köşegen FOV yazar.
+#      YATAY olsaydı F_PX 166.6 olurdu, %25 fark.)
+#   MENZIL_C = F_PX · 1.718 · 1.0738   (son çarpan: dedektör kutusunun
+#     gerçek kanat açıklığından geniş olma payı, simde ölçüldü)
+#
+#   ⚠ BU BİR SPEC DEĞERİDİR, ÖLÇÜM DEĞİL. Üretici FOV'ları yuvarlanmış ve
+#     çoğu zaman abartılıdır; ayrıca yakalama kartı kırpıyorsa gerçek FOV
+#     bundan farklıdır. İlk fırsatta kanat ucu ölçümüyle DOĞRULA:
+#         python3 gercek/kamera_ayari.py --kamera /dev/video2
+#     Araç spec ile ölçüm arasındaki farkı yüzdeyle söyler.
+export DOW_OPTIK_W="${DOW_OPTIK_W:-640}"
+export DOW_OPTIK_H="${DOW_OPTIK_H:-480}"
+export DOW_OPTIK_F_PX="${DOW_OPTIK_F_PX:-208.2}"
+export DOW_OPTIK_TILT="${DOW_OPTIK_TILT:-25.0}"
+export DOW_OPTIK_MENZIL_C="${DOW_OPTIK_MENZIL_C:-384.2}"
+export DOW_OPTIK_MENZIL_C_KOSEGEN="${DOW_OPTIK_MENZIL_C_KOSEGEN:-406.0}"
+export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-/dev/video2}"
 
 # ---- KUMANDA EKSEN HARİTASI (JUMPER-RC / RadioMaster Pocket, 7 eksen) ----
 # ⛔ ÖLÇÜLDÜ, VARSAYILMADI (araclar/kumanda_kalib.py, 2026-08-29) ve
@@ -196,4 +266,20 @@ echo "  panel  : http://127.0.0.1:8810"
 echo "  ⛔ İlk 5 saniye YALNIZ SAFE basılacak (rehber §8) — modülün"
 echo "     MAVİ ışığını o sırada doğrula."
 echo
-exec python3 drone_yki.py --bag skydagger --kamera "$DOW_KAM_KAYNAK" "${EK[@]}"
+# ⛔ -u (TAMPONSUZ): çıktı bir dosyaya yönlendirilince Python stdout'u
+#   tamponlar ve AÇILIŞ TEŞHİSLERİ (kamera, model, kayıt) hiç görünmez.
+#   Sahada `tail -f` ile izlemek imkânsız hâle gelir. (30 Ağu 2026)
+# ⛔ SAHTE BACKEND VARKEN `exec` KULLANILMAZ (30 Ağu 2026'da yaşandı).
+#   `exec` kabuğu YERİNE GEÇER; kabuk ölünce `trap ... EXIT` HİÇ çalışmaz
+#   ve sahte backend Ctrl+C'den sonra yaşamaya devam eder — terminale RC
+#   satırı basıp durur, sonraki çalıştırmada da 8766'yı tutar.
+#   Gerçek backend'de exec doğru: fazladan bir kabuk süreci taşımayalım.
+if [ "$SAHTE_BACKEND" = "1" ]; then
+    python3 -u drone_yki.py --bag skydagger --kamera "$DOW_KAM_KAYNAK" "${EK[@]}"
+    _CIKIS=$?
+    kill "$SAHTE_PID" 2>/dev/null || true
+    wait "$SAHTE_PID" 2>/dev/null || true
+    yesil "  sahte backend kapatıldı."
+    exit $_CIKIS
+fi
+exec python3 -u drone_yki.py --bag skydagger --kamera "$DOW_KAM_KAYNAK" "${EK[@]}"

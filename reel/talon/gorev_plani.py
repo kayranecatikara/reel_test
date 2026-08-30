@@ -53,7 +53,10 @@ except ImportError:                                  # pragma: no cover
 
 _D = {"mav": None, "ev": None, "konum": None, "kip": None, "bagli": False,
       "son_mesaj": "", "n_paket": 0, "indirme": None, "yon": None,
-      "mod": None, "armli": False, "gorev": None}
+      "mod": None, "armli": False, "gorev": None,
+      "hiz": None, "hava_hizi": None, "gaz": None, "irtifa": None,
+      "tirmanis": None, "uydu": None, "fix": None,
+      "pil_v": None, "pil_yuzde": None, "aktif_oge": None}
 _kilit = threading.Lock()
 
 
@@ -88,6 +91,27 @@ def _mav_dongu(adres):
                     elif t == "HOME_POSITION":
                         _D["ev"] = (msg.latitude / 1e7, msg.longitude / 1e7,
                                     msg.altitude / 1000.0)
+                    elif t == "VFR_HUD":
+                        # ⭐ Talon'un CANLI uçuş verisi (2026-08-29).
+                        #   Planlayıcı zaten MAVLink dinliyordu ama yalnız
+                        #   konum/mod alıyordu; hız, irtifa ve gaz ekranda
+                        #   yoktu ve operatör harita sekmesindeyken uçağın
+                        #   ne yaptığını göremiyordu.
+                        _D["hiz"] = msg.groundspeed
+                        _D["hava_hizi"] = msg.airspeed
+                        _D["gaz"] = msg.throttle
+                        _D["irtifa"] = msg.alt
+                        _D["tirmanis"] = msg.climb
+                    elif t == "GPS_RAW_INT":
+                        _D["uydu"] = msg.satellites_visible
+                        _D["fix"] = msg.fix_type
+                    elif t == "SYS_STATUS":
+                        _D["pil_v"] = msg.voltage_battery / 1000.0
+                        _D["pil_yuzde"] = (msg.battery_remaining
+                                           if msg.battery_remaining != -1
+                                           else None)
+                    elif t == "MISSION_CURRENT":
+                        _D["aktif_oge"] = msg.seq
                     elif t == "HEARTBEAT":
                         _D["kip"] = msg.custom_mode
                         _D["mod"] = PLANE_MODLARI.get(msg.custom_mode, "?")
@@ -318,6 +342,10 @@ input,select{width:100%;padding:6px;background:#0b0e13;color:#dfe6f0;
 .cubuk{height:6px;background:#0b0e13;border:1px solid #2a3550;border-radius:3px;
   margin-top:6px;overflow:hidden}
 .cubuk i{display:block;height:100%;background:#2f7dd1;width:0}
+.pilcubuk{position:relative;height:14px;background:#0b0e13;border:1px solid #2a3550;
+  border-radius:4px;overflow:hidden;margin-bottom:7px}
+.pilcubuk i{display:block;height:100%;width:0;transition:width .3s}
+.iyi{color:#5fe08a}.orta{color:#ffd166}.kotu2{color:#ff7b7b}
 </style></head><body>
 <div class=ust><b>TALON — GÖREV PLANI</b>
   <span id=r_bagli class="rozet kotu">MAVLINK</span>
@@ -340,6 +368,11 @@ input,select{width:100%;padding:6px;background:#0b0e13;color:#dfe6f0;
   </div>
   <div>
     <div class=kutu>
+      <h3>Talon — canlı</h3>
+      <div class=pilcubuk><i id=t_pil></i></div>
+      <table id=t_telem></table>
+    </div>
+    <div class=kutu style="margin-top:10px">
       <h3>Görev</h3>
       <label>Kalkış irtifası (m)</label><input id=kalkis type=number value=50>
       <label>Varsayılan waypoint irtifası (m)</label>
@@ -685,6 +718,34 @@ setInterval(async()=>{
   else if(!d.armli)engel="araç ARM değil";
   bb.disabled=!!engel;
   bb.title=engel?("kapalı: "+engel):"uçağı AUTO moduna alır";
+  // ---- TALON CANLI TELEMETRİSİ ----
+  const sat=(a,b)=>`<tr><td style="color:#7d8aa0">${a}</td>`+
+    `<td style="text-align:right;font-weight:700">${b}</td></tr>`;
+  const n1=(v,b)=>(v==null?"—":(v.toFixed?v.toFixed(1):v)+(b||""));
+  const FIX={0:"yok",1:"yok",2:"2D",3:"3D",4:"3D+",5:"RTK",6:"RTK"};
+  if(d.pil_v!=null){
+    // ⚠ HÜCRE SAYISI TAHMİN EDİLMEZ: yüzde geliyorsa o kullanılır.
+    //   Yoksa çubuk boş kalır ama gerilim yine yazılır.
+    const y=(d.pil_yuzde!=null?d.pil_yuzde:0);
+    const e=document.getElementById("t_pil");
+    e.style.width=y+"%";
+    e.style.background=(y<20?"#ff7b7b":y<40?"#ffd166":"#5fe08a");
+  }
+  document.getElementById("t_telem").innerHTML=
+    sat("bağlantı",d.bagli
+        ?'<span class=iyi>BAĞLI</span> '+(d.n_paket||0)
+        :'<span class=kotu2>KOPUK</span>')+
+    sat("mod",'<b>'+(d.mod||"—")+'</b>'+(d.armli?" · ARMLI":" · disarm"))+
+    sat("GPS",(FIX[d.fix]||"—")+"  ·  "+(d.uydu??"—")+" uydu")+
+    sat("pil",(d.pil_v!=null?d.pil_v.toFixed(2)+" V":"—")+
+        (d.pil_yuzde!=null?("  ·  "+d.pil_yuzde+"%"):""))+
+    sat("irtifa",n1(d.irtifa," m"))+
+    sat("hız",n1(d.hiz," m/s")+(d.hava_hizi!=null
+        ?('  <span style="color:#7d8aa0">hava '+d.hava_hizi.toFixed(1)+'</span>'):""))+
+    sat("tırmanış",n1(d.tirmanis," m/s"))+
+    sat("gaz",(d.gaz??"—")+" %")+
+    sat("yön",n1(d.yon,"°"))+
+    sat("aktif öğe",(d.aktif_oge??"—"));
   document.getElementById("r_mesaj").textContent=d.son_mesaj||"";
 },700);
 addEventListener("resize",iste);
@@ -744,6 +805,9 @@ class _H(BaseHTTPRequestHandler):
             d["ev_sebep"] = sebep
             d["konum"] = _D["konum"]
             d["yon"] = _D["yon"]
+            for a in ("hiz", "hava_hizi", "gaz", "irtifa", "tirmanis",
+                      "uydu", "fix", "pil_v", "pil_yuzde", "aktif_oge"):
+                d[a] = _D[a]
             d["mod"] = _D["mod"]
             d["armli"] = _D["armli"]
             d["gorev"] = _D["gorev"]
