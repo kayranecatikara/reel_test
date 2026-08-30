@@ -164,10 +164,24 @@ export DOW_KALKIS_ALT="${DOW_KALKIS_ALT:-0}"
 #     Araç spec ile ölçüm arasındaki farkı yüzdeyle söyler.
 export DOW_OPTIK_W="${DOW_OPTIK_W:-640}"
 export DOW_OPTIK_H="${DOW_OPTIK_H:-480}"
-export DOW_OPTIK_F_PX="${DOW_OPTIK_F_PX:-208.2}"
+# ⛔ DEĞERLER BALIKGÖZE GÖRE YENİLENDİ (30 Ağu 2026).
+#   Eskiden pinhole formülüyle türetilmişlerdi (F_PX 208.2 / C 384.2) ve
+#   mercek balıkgöz olduğu için 1.76 KAT yanlıştılar.
+#   f_bg = (yarı_köşegen)/(yarı_FOV rad) = 400/1.0908 = 366.7 px/rad
+#   C    = f_bg · 1.718 · 1.0738 = 676.5   (köşegen ölçüsü için ×1.0568)
+export DOW_OPTIK_F_PX="${DOW_OPTIK_F_PX:-366.7}"
 export DOW_OPTIK_TILT="${DOW_OPTIK_TILT:-25.0}"
-export DOW_OPTIK_MENZIL_C="${DOW_OPTIK_MENZIL_C:-384.2}"
-export DOW_OPTIK_MENZIL_C_KOSEGEN="${DOW_OPTIK_MENZIL_C_KOSEGEN:-406.0}"
+export DOW_OPTIK_MENZIL_C="${DOW_OPTIK_MENZIL_C:-676.5}"
+export DOW_OPTIK_MENZIL_C_KOSEGEN="${DOW_OPTIK_MENZIL_C_KOSEGEN:-714.7}"
+#
+# ⛔⛔ MENZIL_C HÂLÂ TÜRETME, ÖLÇÜM DEĞİL. İçinde iki varsayım var:
+#     (a) FOV'un KÖŞEGEN olduğu
+#     (b) dedektör kutu payının simdeki gibi %7.4 olduğu
+#   İKİSİNİ BİRDEN öldüren tek ölçüm:
+#       Talon'u ÖLÇÜLEN R metreye koy, panelden kutu köşegenini oku:
+#           DOW_OPTIK_MENZIL_C_KOSEGEN = köşegen_px × R
+#   Ör. 10 m'de köşegen 71 px ise -> 710. Birkaç mesafede tekrarla,
+#   tutarlıysa doğru.
 export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-/dev/video2}"
 
 # ---- BALIKGÖZ (FISHEYE) MERCEK MODELİ --------------------------------------
@@ -187,13 +201,22 @@ export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-/dev/video2}"
 #     K = [[fx,0,cx],[0,fy,cy],[0,0,1]]   D = [k1,k2,k3,k4]
 #   şu satırların yorumunu kaldır ve fx / D değerlerini yaz:
 #
-# export DOW_OPTIK_MODEL=opencv
-# export DOW_OPTIK_FBG=366.7                 # K'daki fx (px/radyan)
-# export DOW_OPTIK_D="-0.052,0.0113,-0.0024,0.00031"   # D = k1..k4
+#   ⭐ AÇILDI 2026-08-30 — kalibrasyon FOV 125°, TILT 25°, balıkgöz TEYİT.
+export DOW_OPTIK_MODEL="${DOW_OPTIK_MODEL:-esuzaklik}"
+export DOW_OPTIK_FOV_KOSEGEN="${DOW_OPTIK_FOV_KOSEGEN:-125}"
 #
-#   Kalibrasyon YOKKEN kaba yaklaşım (tek parametre, FOV'dan):
-# export DOW_OPTIK_MODEL=esuzaklik
-# export DOW_OPTIK_FOV_KOSEGEN=125
+#   ⚠ "KÖŞEGEN" KABUL EDİLDİ — balıkgöz merceklerinde üreticiler ve
+#     kalibrasyon araçları genelde köşegen FOV verir. YANLIŞSA:
+#         köşegen 125 -> f_bg 366.7   MENZIL_C 676.5   40px = 16.9 m
+#         yatay   125 -> f_bg 293.4   MENZIL_C 541.2   40px = 13.5 m
+#         dikey   125 -> f_bg 220.0   MENZIL_C 405.9   40px = 10.1 m
+#     Doğru ekseni bilmiyorsan MENZIL_C'yi ÖLÇ (aşağıya bak) — ölçüm
+#     ekseni bilmeye gerek bırakmaz.
+#
+#   K/D matrisleri gelirse KESİN model (bozulma katsayıları dahil):
+# export DOW_OPTIK_MODEL=opencv
+# export DOW_OPTIK_FBG=<K'daki fx>
+# export DOW_OPTIK_D="<k1>,<k2>,<k3>,<k4>"
 #
 #   ⛔ AÇMADAN ÖNCE ÖLÇ: hedefi sabit mesafede tutup kadrajda gezdir;
 #     panelde "görsel menzil" SABİT kalmalı. Kalmıyorsa model yanlış.
