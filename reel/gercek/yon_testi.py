@@ -99,8 +99,10 @@ def main():
     a = argparse.ArgumentParser(description="Yön işareti testi (yerde)")
     a.add_argument("--sure", type=float, default=90.0, help="toplama süresi (s)")
     a.add_argument("--panel", default=PANEL)
-    a.add_argument("--mod", choices=("cevir", "hedef"), default="cevir",
-                   help="cevir: aracı döndür · hedef: hedefi gezdir")
+    a.add_argument("--mod", choices=("cevir", "hedef", "canli"),
+                   default="cevir",
+                   help="cevir: aracı döndür · hedef: geometriden kıyas · "
+                        "canli: ANLIK eksen eksen ✔/⛔ (elle oynat, izle)")
     a = a.parse_args()
 
     print("=" * 70)
@@ -116,6 +118,9 @@ def main():
         print("  30 m uzakta tut ve dört yöne götür (kuzey/doğu/güney/batı).")
         print("  Her noktada ~10 s bekle.")
     print()
+
+    if a.mod == "canli":
+        return _canli(a)
 
     # ---- OTONOM'a geçilmesini bekle ----
     t0 = time.time()
@@ -261,6 +266,109 @@ def main():
         print("     birbirine çok yakın. Aracı DÖRT belirgin yöne çevirip")
         print("     her yönde 10 s bekleyerek tekrarla.")
     print("=" * 70)
+    return 0
+
+
+def _canli(a):
+    """ANLIK KİP — sen aracı oynatırsın, ekran her eksende ✔/⛔ basar.
+
+    ⛔ NİYE AYRI: toplu kip 90 saniye bekletip sonunda tek hüküm verir.
+      Ama "şunu yaptım, ne oldu" sorusunun cevabı ANINDA görünmeli;
+      yoksa hangi hareketin hangi satırı ürettiğini kaybedersin.
+
+    ÜÇ EKSEN AYRI AYRI SINANIR:
+      İLERİ (pitch) : hedef önümdeyse ileri, arkamdaysa geri
+      YANAL (roll)  : hedef sağımdaysa sağa, solumdaysa sola
+      YAW           : burun hedeften saparsa GERİ döndürecek yönde
+
+    ⚠ Duruş (pitch/roll YATIRMAK) bu komutları DEĞİŞTİRMEZ ve
+      değiştirmemeli — güdüm konum denetleyicisidir, duruş Betaflight'ın
+      işidir. Yatırınca satırların sabit kalması DOĞRU davranıştır.
+    """
+    print("  Aracı elinle oynat, satırları izle. Ctrl+C ile çık.\n")
+    print("  ⛔ Panelde OTONOM seçili olmalı — değilse çubuklar güdümün")
+    print("     değil SENİN manuel çubuklarındır ve hep sıfır görünür.\n")
+    bas = ("  hedef    burun  gövdede  |      İLERİ           YANAL"
+           "            YAW")
+    say = {"ileri": [0, 0], "yanal": [0, 0], "yaw": [0, 0]}
+    n = 0
+    try:
+        while True:
+            try:
+                d = _al(a.panel)
+            except Exception as e:
+                print("  ⛔ panele ulaşılamıyor: %s" % e)
+                time.sleep(1.0)
+                continue
+            k = d.get("komut") or {}
+            cub = k.get("komut") or []
+            du = d.get("durus") or {}
+            hk = d.get("hedef_ham_konum")
+            ko = d.get("konum") or {}
+            if k.get("kaynak") != "OTONOM":
+                print("\r  ⛔ kaynak=%-7s sebep=%-14s -> panelde OTONOM'a bas "
+                      % (k.get("kaynak"), k.get("sebep")), end="")
+                sys.stdout.flush()
+                time.sleep(0.5)
+                continue
+            if not hk or len(cub) < 4 or du.get("yaw") is None:
+                print("\r  ⛔ hedef konumu yok — köken kuruldu mu, hedef taze mi ",
+                      end="")
+                sys.stdout.flush()
+                time.sleep(0.5)
+                continue
+            dn = hk["kuzey"] - (ko.get("kuzey") or 0.0)
+            de = hk["dogu"] - (ko.get("dogu") or 0.0)
+            mesafe = math.hypot(dn, de)
+            kert = math.degrees(math.atan2(de, dn)) % 360.0
+            yaw = float(du["yaw"])
+            govde = _yon_farki(kert, yaw)      # + ise hedef SAĞDA
+            _, pitch, roll, yawc = cub[0], cub[1], cub[2], cub[3]
+
+            def _isaret(beklenen, gercek, olu=0.03):
+                if abs(beklenen) < 0.15:
+                    return "—", None            # beklenti belirsiz, sayma
+                if abs(gercek) < olu:
+                    return "· sıfır", None
+                return (("✔", True) if (beklenen > 0) == (gercek > 0)
+                        else ("⛔ TERS", False))
+
+            b_ileri = math.cos(math.radians(govde))
+            b_yanal = math.sin(math.radians(govde))
+            b_yaw = govde / 180.0               # hedef sağdaysa sağa dön
+            s_i, o_i = _isaret(b_ileri, pitch)
+            s_y, o_y = _isaret(b_yanal, roll)
+            s_w, o_w = _isaret(b_yaw, yawc)
+            for ad, o in (("ileri", o_i), ("yanal", o_y), ("yaw", o_w)):
+                if o is True:
+                    say[ad][0] += 1
+                elif o is False:
+                    say[ad][1] += 1
+            if n % 15 == 0:
+                print("\n" + bas)
+                print("  " + "-" * 74)
+            n += 1
+            print("  %5.1f m  %6.1f  %+6.1f  | %+.2f %-7s  %+.2f %-7s  %+.2f %-7s"
+                  % (mesafe, yaw, govde, pitch, s_i, roll, s_y, yawc, s_w))
+            time.sleep(0.7)
+    except KeyboardInterrupt:
+        pass
+    print("\n" + "=" * 74)
+    print("  ÖZET  (— olan satırlar sayılmadı: beklenti belirsizdi)")
+    for ad, etiket in (("ileri", "İLERİ (pitch)"), ("yanal", "YANAL (roll)"),
+                       ("yaw", "YAW")):
+        d_, t_ = say[ad]
+        top = d_ + t_
+        if top == 0:
+            print("   %-14s örnek yok" % etiket)
+        elif t_ == 0:
+            print("   %-14s ✔ DOĞRU        (%d/%d)" % (etiket, d_, top))
+        elif d_ == 0:
+            print("   %-14s ⛔ TERS         (%d/%d ters)" % (etiket, t_, top))
+        else:
+            print("   %-14s ⚠ KARIŞIK      (%d doğru / %d ters)"
+                  % (etiket, d_, t_))
+    print("=" * 74)
     return 0
 
 
