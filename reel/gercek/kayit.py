@@ -102,6 +102,10 @@ SUTUNLAR = [
     ("cubuk_roll",     "komut.komut.2"),
     ("cubuk_yaw",      "komut.komut.3"),
     ("mercek",         "optik.mercek"),
+    # --- RTL (30 Ağu 2026, SONA) ---
+    ("rtl_aktif",      "rtl.aktif"),
+    ("rtl_asama",      "rtl.asama"),
+    ("rtl_mesafe",     "rtl.mesafe"),
 ]
 
 

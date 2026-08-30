@@ -3658,3 +3658,94 @@ def test_R115_balikgoz_modeli_VARSAYILANDA_KAPALI_ve_dogru():
         assert yasak not in kod, (
             "görüntü düzeltiliyor (%s) — dedektörün eğitim dağılımı bozulur"
             % yasak)
+
+
+def test_R116_RTL_hakeme_dokunmaz_ve_kokensiz_baslamaz():
+    """RTL = GPS ile kalkış noktasına dön.
+
+    ⛔ BETAFLIGHT GPS RESCUE KULLANILMAZ: şartname yalnız ANGLE MOD'a
+      izin veriyor; GPS Rescue ayrı bir uçuş kipidir. RTL'i kendimiz,
+      Angle modda, çubuk komutu üreterek yapıyoruz.
+
+    ⛔ HAKEME DOKUNULMAZ: RTL, güdümün YERİNE geçen bir otonom kaynaktır.
+      `komut.py`'deki dört şart aynen geçerli — pilot izni yoksa RTL de
+      çalışmaz, kumanda kopuksa RTL de kesilir.
+    """
+    sys.path.insert(0, KOK)
+    from gercek.rtl import Rtl, RtlCfg
+    from dow.gudum.cevirici import HizCubukCevirici
+
+    # --- köken yoksa BAŞLAMAZ ---
+    r = Rtl(HizCubukCevirici())
+    assert r.basla(False) is False, "kökensiz RTL başladı — nereye döneceği belirsiz"
+    assert "köken" in r.sebep
+    assert r.basla(True) is True
+
+    # --- üç aşama ---
+    def asama(konum):
+        rr = Rtl(HizCubukCevirici())
+        rr.basla(True)
+        rr.adim(konum, (0., 0., 0.), 0.0, 0.05)
+        return rr.asama
+    assert asama((100., 50., 2.0)) == "TIRMAN", "alçakken önce tırmanmalı"
+    assert asama((100., 50., 30.)) == "DON", "irtifa tamamken dönmeli"
+    assert asama((3., 1., 30.)) == "BEKLE", "varış yarıçapında beklemeli"
+
+    # --- TIRMAN'da YATAY HAREKET OLMAMALI (engel payı) ---
+    rr = Rtl(HizCubukCevirici()); rr.basla(True)
+    for _ in range(30):
+        t, p, rl, y = rr.adim((100., 50., 2.0), (0., 0., 0.), 0.0, 0.05)
+    assert abs(p) < 1e-6 and abs(rl) < 1e-6, (
+        "tırmanırken yatay komut var — önce yükselip sonra dönmek engel "
+        "çarpma riskini azaltır")
+    assert t > 0, "tırmanma komutu yok"
+
+    # --- DÖN: çubuklar DOĞRU ORANDA oturmalı (yön korunmalı) ---
+    #   ⚠ ilk tikler eğim sınırlayıcı (MAX_DELTA) yüzünden eşit çıkar;
+    #     bu doyum DEĞİLDİR, birkaç tik sonra doğru orana oturur.
+    rr = Rtl(HizCubukCevirici()); rr.basla(True)
+    for _ in range(40):
+        t, p, rl, y = rr.adim((100., 50., 30.), (0., 0., 0.), 0.0, 0.05)
+    # ⛔ MODELDEN BAĞIMSIZ: çevirici "aci" ya da "dogru" modelinde
+    #   olabilir (env'e bağlı) ve ikisi FARKLI oran verir. Beklentiyi
+    #   çeviricinin KENDİ eşlemesinden hesapla — böylece bekçi yalnız
+    #   YÖNÜN korunduğunu sınar, modeli sabitlemez.
+    cev_ref = HizCubukCevirici()
+    b_ileri = cev_ref._ivme_cubuk(1.5 * 7.16)
+    b_sag = cev_ref._ivme_cubuk(1.5 * 3.58)
+    beklenen = abs(b_ileri / b_sag)
+    assert abs(abs(p / rl) - beklenen) < 0.02, (
+        "yön bozuluyor: pitch/roll %.3f, beklenen %.3f (model %s)"
+        % (p / rl, beklenen, cev_ref.cfg.MODEL))
+
+    # --- FREN: mesafe azalınca hız düşmeli ---
+    def hiz(d):
+        c = RtlCfg
+        return 0.0 if d <= c.VARIS_M else c.HIZ_MS * min(1.0, d / c.FREN_M)
+    assert hiz(100) == RtlCfg.HIZ_MS and hiz(15) < RtlCfg.HIZ_MS, (
+        "fren yok — araç hedefi aşıp kökenin etrafında salınır")
+    assert hiz(3) == 0.0
+
+    # --- ⛔ KENDİLİĞİNDEN İNMEMELİ ---
+    k = open(os.path.join(REEL, "gercek", "rtl.py"), encoding="utf-8").read()
+    assert "KENDİLİĞİNDEN İNMİYOR" in k, "otomatik iniş kararı belgelenmemiş"
+
+    # --- hakem DEĞİŞMEMİŞ olmalı ---
+    ko = open(os.path.join(REEL, "gercek", "komut.py"), encoding="utf-8").read()
+    assert "rtl" not in ko.lower(), (
+        "RTL hakeme sızmış — dört şartlı emniyet kapısı R39 ile kanıtlandı")
+
+    # --- RTL güdümün YERİNE geçmeli, yanında değil ---
+    y = open(os.path.join(REEL, "drone_yki.py"), encoding="utf-8").read()
+    bas = y.index("if rtl.aktif:")
+    govde = y[bas:bas + 900]
+    assert "else:" in govde and "beyin.adim" in govde, (
+        "RTL ile güdüm aynı anda otonom_yaz çağırıyor — son yazan kazanır, "
+        "araç iki hedef arasında salınır")
+
+    # --- MANUEL'e geçmek RTL'i kesmeli ---
+    p = open(os.path.join(REEL, "gercek", "panel.py"), encoding="utf-8").read()
+    bas = p.index('if self.path == "/api/kip"')
+    assert '_D["rtl"].dur()' in p[bas:bas + 900], (
+        "MANUEL RTL'i kesmiyor — pilot tekrar OTONOM'a bastığında araç "
+        "hedefe değil EVE uçar")

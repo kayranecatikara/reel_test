@@ -108,6 +108,28 @@ export DOW_DET_RENK="${DOW_DET_RENK:-bgr}"
 #   ve sessizce yok sayılıyor (ölçüldü: fp32 5.3 ms, "fp16" 5.2 ms — fark
 #   yok). Simde 1.6 kat kazandırıyordu. 5-9 ms'de önemi kalmadı, kovalanmadı.
 
+# ---- KALKIŞ FAZI KAPATILDI ------------------------------------------------
+# ⛔ SİMÜLASYON MANTIĞI GERÇEKTE TERS ÇALIŞIYOR.
+#
+#   Simde drone yere doğuyordu ve hedefi kovalamadan ÖNCE tırmanması
+#   gerekiyordu; `KALKIS` fazı bunun içindi ve 45 m'ye (tolerans −3 →
+#   42 m) çıkana kadar YATAY KOMUT ÜRETMİYORDU.
+#
+#   Gerçek işleyiş TERSİ: pilot aracı ELLE kaldırıyor, sonra OTONOM'a
+#   basıyor. Yani araç zaten havada. KALKIS fazı burada işe yaramaz,
+#   üstelik ZARARLIDIR: 20 m'de OTONOM'a basarsan araç hedefi kovalamak
+#   yerine 42 m'ye tırmanmaya çalışır — pilotun beklediği şey bu değil.
+#
+#   ÖLÇÜLDÜ (30 Ağu 2026):
+#     KALKIS_ALT=45, irtifa  0 m -> faz KALKIS    yatay komut YOK
+#     KALKIS_ALT=45, irtifa 43 m -> faz ISTASYON  tam komut
+#     KALKIS_ALT=0,  irtifa  0 m -> faz ISTASYON  tam komut
+#
+#   0 verince kapı (`yukseklik >= 0 − 3`) ilk tikte açılır ve faz
+#   doğrudan ISTASYON olur. Kod silinmedi; sim tarafı bozulmasın diye
+#   AYARLA kapatıldı, geri açmak için bu satırı değiştirmek yeter.
+export DOW_KALKIS_ALT="${DOW_KALKIS_ALT:-0}"
+
 # ---- KAMERA OPTİĞİ ---------------------------------------------------------
 # ⛔⛔ ŞU AN SİMÜLASYON DEĞERLERİYLE UÇUYOR — HENÜZ ÖLÇÜLMEDİ.
 #

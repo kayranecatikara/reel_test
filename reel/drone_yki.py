@@ -44,6 +44,7 @@ from gercek.dikey import DikeyDongu                     # noqa: E402
 from gercek.elrs import ElrsBag                         # noqa: E402
 from gercek.hedef import HedefKaynagi, UdpDinleyici     # noqa: E402
 from gercek.kayit import Kayitci                       # noqa: E402
+from gercek.rtl import Rtl                             # noqa: E402
 from gercek.kamera_yakala import Kamera, KameraCfg      # noqa: E402
 from gercek.komut import KomutSureci                    # noqa: E402
 from gercek.kumanda import Kumanda                      # noqa: E402
@@ -279,6 +280,14 @@ def main():
     print("  Çıkmak için Ctrl+C")
     print("=" * 70)
 
+    # ---------------- 9a) RTL — EVE DÖN ----------------
+    # ⛔ GÜDÜMLE AYNI ÇEVİRİCİ: çubuk eşlemesi tek yerden gelmeli, yoksa
+    #   RTL ile otonom güdüm aynı hız isteğine FARKLI çubuk üretir.
+    rtl = Rtl(beyin.cev)
+    PANEL._D["rtl"] = rtl
+    print("  RTL       : hazır (irtifa %.0f m, hız %.0f m/s)"
+          % (rtl.cfg.IRTIFA_M, rtl.cfg.HIZ_MS))
+
     # ---------------- 9b) uçuş kaydı ----------------
     # ⛔ HER ZAMAN AÇIK. İlk otonom denemeden sonra "ne oldu" sorusunu
     #   cevaplayacak veri, ancak o an kaydedilmişse vardır. Kapatmak için
@@ -315,9 +324,26 @@ def main():
                     son_kare_sayac = sayac
                     _gorus(beyin, kare, t, kare_t - t0, a.gorsel)
 
-            # --- güdüm ---
+            # --- güdüm ya da RTL ---
+            # ⛔ RTL GÜDÜMÜN YERİNE GEÇER, yanında değil: ikisi aynı anda
+            #   `otonom_yaz` çağırsaydı son yazan kazanırdı ve araç iki
+            #   hedef arasında salınırdı.
             if gb.canli():
-                beyin.adim(t, periyot)
+                if rtl.aktif:
+                    try:
+                        thr, pit, rol, yw = rtl.adim(
+                            gb.konum(), gb.hiz_vektoru(),
+                            gb.yonelim()[2], periyot)
+                        ks.otonom_yaz(thr, pit, rol, yw)
+                    except Exception as e:
+                        # ⛔ RTL PATLARSA SESSİZ KALMA: otonom setpoint
+                        #   akmayı keser, hakem dört şarttan birini
+                        #   kaybeder ve komut çubuklara düşer.
+                        rtl.dur()
+                        rtl.sebep = "hata: %s" % e
+                        print("  ⛔ RTL durdu: %s" % e)
+                else:
+                    beyin.adim(t, periyot)
             sonraki += periyot
             uyku = sonraki - time.monotonic()
             time.sleep(uyku if uyku > 0 else 0.0)

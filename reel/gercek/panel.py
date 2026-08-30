@@ -36,7 +36,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 _D = {"kamera": None, "komut": None, "baglanti": None, "hedef": None,
       "sunucu": None, "kilitci": None, "beyin": None, "dikey": None,
       "son_kutu": None, "olcut": None, "ham_kutu": None,
-      "ham_sebep": "", "kayit": None, "gorsel_aktif": False}
+      "ham_sebep": "", "kayit": None, "gorsel_aktif": False,
+      "rtl": None}
 _kosul = threading.Condition()
 _kare_sayac = [0]
 
@@ -228,6 +229,8 @@ def _durum():
     except Exception:
         pass
     d["gorsel_aktif"] = bool(_D.get("gorsel_aktif"))
+    if _D.get("rtl") is not None:
+        d["rtl"] = _D["rtl"].durum()
     if _D.get("kayit") is not None:
         d["kayit"] = _D["kayit"].durum()
     if _D["son_kutu"]:
@@ -307,6 +310,9 @@ table{width:100%;border-collapse:collapse}
 .klsat .bas{flex:1}
 .klsat .no{color:#7d8aa0;font-size:11px;text-align:right}
 button.kucuk{padding:5px 6px;font-size:11px}
+button.rtl{background:#3a2a0a;border-color:#ffd166;color:#ffd166}
+button.rtl:hover{background:#4a360d}
+button.rtl.aktif{background:#ffd166;color:#0b0e13}
 td{padding:2px 0}td:last-child{text-align:right;font-weight:700}
 .sonuk{color:#7d8aa0}
 .kumanda{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
@@ -370,6 +376,7 @@ button.armli{background:#166534;border-color:#4ade80}
       <div class=dugmeler>
         <button id=b_manuel class=aktif>MANUEL</button>
         <button id=b_otonom>OTONOM</button>
+        <button id=b_rtl class=rtl>RTL — EVE DÖN</button>
         <button id=b_arm class=arm>ARM (BASILI TUT)</button>
       </div>
       <div class=dugmeler>
@@ -488,6 +495,17 @@ const yerR=pad(document.getElementById("padR"),document.getElementById("topuzR")
 
 document.getElementById("b_manuel").onclick=()=>kip("MANUEL");
 document.getElementById("b_otonom").onclick=()=>kip("OTONOM");
+// ⛔ RTL ONAY İSTER: aracı otonom olarak eve uçurur. Yanlışlıkla
+//   basılırsa uçak elinden çıkar.
+document.getElementById("b_rtl").onclick=async()=>{
+  const acik=document.getElementById("b_rtl").classList.contains("aktif");
+  if(acik){ await post("/api/rtl",{ac:false}); return; }
+  if(!confirm("RTL — EVE DÖN\n\nAraç GPS ile KALKIŞ NOKTASINA dönecek,\n"+
+              "önce güvenli irtifaya tırmanacak ve orada ASILI kalacak.\n"+
+              "Kendiliğinden İNMEZ.\n\nBaşlasın mı?"))return;
+  const r=await post("/api/rtl",{ac:true});
+  if(!r.ok) alert("RTL başlamadı: "+(r.sebep||"?"));
+};
 // ⛔ ZORLAMA YOLU AÇIK. Sahada listenin bir maddesi yanlış kırmızı
 //   yanabilir; operatörün otonomdan MAHRUM kalması bundan tehlikelidir.
 //   Çift tık + onay ile kilit kalkar ve durum kayda düşer.
@@ -804,7 +822,7 @@ function gosterim(d){
   if(kumandaVar && k.komut){ // fiziksel kumanda -> topuzlar ONU gösterir
     yerL(k.komut[3],k.komut[0]); yerR(k.komut[2],k.komut[1]); }
   const ko=d.konum||{}, du=d.durus||{}, hz=d.hiz||{}, hd=d.hedef||{}, g=d.gudum||{};
-  const hh=d.hedef_ham_konum;
+  const hh=d.hedef_ham_konum, rt=d.rtl;
   // ---- PİL — uçuşun en kritik göstergesi ----
   const pv=a.pil_v, py=a.pil_yuzde;
   const pilTaze=(a.yas_pil!=null&&a.yas_pil<3);
@@ -833,6 +851,10 @@ function gosterim(d){
     sat("kaynak",(k.kaynak||"—")+(k.sebep&&k.sebep!="-"?" ("+k.sebep+")":""))+
     // ⭐ GİDEN ÇUBUKLAR — araca GERÇEKTEN ne gönderiliyor. Tezgâhta
     //   "güdüm komut üretiyor mu" sorusunun tek doğrudan cevabı budur.
+    sat("RTL",(rt&&rt.aktif
+        ?('<b class=orta>'+rt.asama+'</b>  eve '+(rt.mesafe??"—")+" m"+
+          "  (hedef irtifa "+rt.irtifa_hedef+" m)")
+        :("kapalı"+(rt&&rt.sebep?(' <span class=kotu2>'+rt.sebep+"</span>"):""))))+
     sat("çubuk T/P/R/Y",(k.komut
         ?k.komut.map(v=>(v>=0?"+":"")+v.toFixed(2)).join("  ")
         :"—"))+
@@ -1012,11 +1034,39 @@ class _Islem(BaseHTTPRequestHandler):
                          otonom_izin=bool(g.get("izin", False)))
             return self._yaz(200, "application/json", b'{"ok":1}')
         if self.path == "/api/kip" and ks is not None:
+            yeni_kip = str(g.get("kip", "MANUEL")).upper()
             try:
-                ks.kip_sec(str(g.get("kip", "MANUEL")).upper())
+                ks.kip_sec(yeni_kip)
             except ValueError:
                 return self._yaz(400, "application/json", b'{"ok":0}')
+            # ⛔ MANUEL'E GEÇMEK RTL'İ DE KESER. Yoksa RTL sessizce
+            #   ayakta kalır ve pilot tekrar OTONOM'a bastığında araç
+            #   hedefe değil EVE uçar — beklenmedik davranış.
+            if yeni_kip != "OTONOM" and _D.get("rtl") is not None:
+                _D["rtl"].dur()
             return self._yaz(200, "application/json", b'{"ok":1}')
+        if self.path == "/api/rtl":
+            r = _D.get("rtl")
+            if r is None:
+                return self._yaz(200, "application/json",
+                                 b'{"ok":0,"sebep":"RTL kurulu degil"}')
+            if not g.get("ac"):
+                r.dur()
+                return self._yaz(200, "application/json", b'{"ok":1}')
+            gb = _D.get("baglanti")
+            hazir = bool(gb is not None and gb.cerceve.hazir)
+            ok = r.basla(hazir)
+            # ⛔ RTL yalnız OTONOM kipinde çalışır — hakemin dört şartı
+            #   aynen geçerli. Kipi BİZ değiştiriyoruz ki pilot iki
+            #   düğmeye basmak zorunda kalmasın; ama izin/kumanda
+            #   şartları hâlâ hakemde.
+            if ok and ks is not None:
+                try:
+                    ks.kip_sec("OTONOM")
+                except ValueError:
+                    pass
+            return self._yaz(200, "application/json", json.dumps(
+                {"ok": bool(ok), "sebep": r.sebep}).encode())
         if self.path == "/api/koken" and _D["baglanti"] is not None:
             ok, mesaj = _D["baglanti"].kokeni_kur(bool(g.get("zorla")))
             return self._yaz(200, "application/json",
