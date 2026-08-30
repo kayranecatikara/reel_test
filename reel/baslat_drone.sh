@@ -148,6 +148,34 @@ export DOW_OPTIK_MENZIL_C="${DOW_OPTIK_MENZIL_C:-384.2}"
 export DOW_OPTIK_MENZIL_C_KOSEGEN="${DOW_OPTIK_MENZIL_C_KOSEGEN:-406.0}"
 export DOW_KAM_KAYNAK="${DOW_KAM_KAYNAK:-/dev/video2}"
 
+# ---- BALIKGÖZ (FISHEYE) MERCEK MODELİ --------------------------------------
+# ⛔⛔ ŞU AN KAPALI (pinhole) — davranış simülasyondaki gibi.
+#
+#   SORUN: FPV merceği balıkgözdür, oyun motorunun kamerası DEĞİLDİ.
+#   FOV'dan pinhole formülüyle türetilen F_PX (208.2) yalnız KÖŞEDE
+#   doğrudur; merkez civarında balıkgöz odağı 366.7 px/rad — 1.76 KAT
+#   fark. Güdüm `yaw + 3·azimut` uyguladığı için bu, kadrajın ortasında
+#   38°'ye varan FAZLA YAW KOMUTU demektir.
+#
+#   ⚠ Bu yüzden yukarıdaki DOW_OPTIK_F_PX / MENZIL_C değerleri de
+#     ŞÜPHELİ: pinhole varsayımıyla türetildiler. Arkadaşın OpenCV
+#     kalibrasyonu gelince ikisi de yenilenmeli.
+#
+#   KALİBRASYON GELİNCE (cv2.fisheye.calibrate çıktısı):
+#     K = [[fx,0,cx],[0,fy,cy],[0,0,1]]   D = [k1,k2,k3,k4]
+#   şu satırların yorumunu kaldır ve fx / D değerlerini yaz:
+#
+# export DOW_OPTIK_MODEL=opencv
+# export DOW_OPTIK_FBG=366.7                 # K'daki fx (px/radyan)
+# export DOW_OPTIK_D="-0.052,0.0113,-0.0024,0.00031"   # D = k1..k4
+#
+#   Kalibrasyon YOKKEN kaba yaklaşım (tek parametre, FOV'dan):
+# export DOW_OPTIK_MODEL=esuzaklik
+# export DOW_OPTIK_FOV_KOSEGEN=125
+#
+#   ⛔ AÇMADAN ÖNCE ÖLÇ: hedefi sabit mesafede tutup kadrajda gezdir;
+#     panelde "görsel menzil" SABİT kalmalı. Kalmıyorsa model yanlış.
+
 # ---- KUMANDA EKSEN HARİTASI (JUMPER-RC / RadioMaster Pocket, 7 eksen) ----
 # ⛔ ÖLÇÜLDÜ, VARSAYILMADI (araclar/kumanda_kalib.py, 2026-08-29) ve
 #   Betaflight Receiver sekmesinde gözle DOĞRULANDI.

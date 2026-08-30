@@ -3564,3 +3564,97 @@ def test_R114_kabul_esikleri_ENV_ile_ayarlanabilir():
     #   süzgecinin eleyeceği aday hiç bulunmaz ve kapı anlamsızlaşır.
     assert y < a, ("tarama eşiği (%.2f) kabul eşiğinden (%.2f) düşük değil"
                    % (y, a))
+
+
+def test_R115_balikgoz_modeli_VARSAYILANDA_KAPALI_ve_dogru():
+    """⛔ SİMDE OLMAYAN HATA SINIFI (30 Ağu 2026).
+
+    Oyun motorları (UE5) PERSPEKTİF render eder — DoW kamerasında
+    balıkgöz bozulması YOKTU. Gerçek FPV merceği balıkgözdür ve iki şeyi
+    bozar:
+      1. KERTERİZ — `atan(r/F_PX)` delikli iğnenin tersidir. FOV'dan
+         pinhole formülüyle türetilen F_PX yalnız KÖŞEDE doğrudur;
+         merkezde 1.76 kat yanılır. Güdüm `yaw + 3·azimut` uyguladığı
+         için 38°'ye varan fazla yaw komutu demektir.
+      2. MENZİL — kutu boyutu kadraj konumuna göre değişir.
+
+    ⛔ VARSAYILAN `pinhole`: davranış BİT BİT eskisi. Model açılırsa
+      güdüm değişir; bu yüzden ölçümle açılır.
+    """
+    import subprocess
+    ORT = dict(os.environ, DOW_OPTIK_W="640", DOW_OPTIK_H="480")
+    for k in ("DOW_OPTIK_MODEL", "DOW_OPTIK_FBG", "DOW_OPTIK_D",
+              "DOW_OPTIK_FOV_KOSEGEN"):
+        ORT.pop(k, None)
+
+    def kos(kod, **ek):
+        c = subprocess.run([sys.executable, "-c", kod], cwd=KOK,
+                           env=dict(ORT, **ek), capture_output=True, text=True)
+        assert c.returncode == 0, c.stderr[:400]
+        return c.stdout.strip()
+
+    # --- varsayılan pinhole, düzeltme çarpanı TAM 1.0 ---
+    v = kos("from dow.gorus import kamera as K\n"
+            "print(K.OPTIK_MODEL, K.olcek_duzeltme(K.CX+300, K.CY))")
+    ad, carpan = v.split()
+    assert ad == "pinhole" and float(carpan) == 1.0, (
+        "varsayılan pinhole değil ya da düzeltme uygulanıyor: %s" % v)
+
+    # --- eşuzaklık: ters çözüm KESİN olmalı ---
+    v = kos("import math\nfrom dow.gorus import kamera as K\n"
+            "en=0.0\n"
+            "for d in (5,15,30,45,60):\n"
+            "    th=math.radians(d); r=K.F_BG*th\n"
+            "    en=max(en, abs(math.degrees(K.aci_yaricaptan(r))-d))\n"
+            "print('%.3e' % en, '%.1f' % K.F_BG)",
+            DOW_OPTIK_MODEL="esuzaklik", DOW_OPTIK_FOV_KOSEGEN="125")
+    hata, fbg = v.split()
+    assert float(hata) < 1e-9, "eşuzaklık ters çözümü hatalı: %s" % hata
+    assert abs(float(fbg) - 366.7) < 0.5, (
+        "FOV'dan f_bg türetmesi bozuk: %s (366.7 bekleniyordu)" % fbg)
+
+    # --- opencv: Newton yakınsamalı, D=0 iken eşuzaklıkla AYNI ---
+    v = kos("import math\nfrom dow.gorus import kamera as K\n"
+            "en=0.0\n"
+            "for d in (2,20,45,70):\n"
+            "    th=math.radians(d); r=K.F_BG*K._theta_d(th)\n"
+            "    en=max(en, abs(math.degrees(K.aci_yaricaptan(r))-d))\n"
+            "print('%.3e' % en)",
+            DOW_OPTIK_MODEL="opencv", DOW_OPTIK_FBG="366.7",
+            DOW_OPTIK_D="-0.052,0.0113,-0.0024,0.00031")
+    assert float(v) < 1e-9, "Newton çözücü yakınsamıyor: %s" % v
+
+    a = kos("from dow.gorus import kamera as K\nprint('%.9f' %"
+            " K.olcek_duzeltme(K.CX+320, K.CY))",
+            DOW_OPTIK_MODEL="opencv", DOW_OPTIK_FBG="366.7")
+    b = kos("from dow.gorus import kamera as K\nprint('%.9f' %"
+            " K.olcek_duzeltme(K.CX+320, K.CY))",
+            DOW_OPTIK_MODEL="esuzaklik", DOW_OPTIK_FBG="366.7")
+    assert a == b, ("D=0 iken opencv eşuzaklıkla aynı OLMALI: %s vs %s"
+                    % (a, b))
+
+    # --- geçersiz değerler sessizce yutulmamalı ---
+    for kotu in ({"DOW_OPTIK_MODEL": "balik"}, {"DOW_OPTIK_D": "1,2,3"}):
+        c = subprocess.run(
+            [sys.executable, "-c", "from dow.gorus import kamera"],
+            cwd=KOK, env=dict(ORT, **kotu), capture_output=True, text=True)
+        assert c.returncode != 0, "geçersiz optik ayarı kabul edildi: %s" % kotu
+
+    # --- güdüm HER İKİ menzil hesabında da düzeltmeyi uygulamalı ---
+    i = open(os.path.join(KOK, "dow", "gudum", "ibvs.py"),
+             encoding="utf-8").read()
+    assert i.count("KAM.olcek_duzeltme(cx, cy)") == 2, (
+        "menzil düzeltmesi iki hesaptan birinde YOK — panelde yazan sayı "
+        "ile kapının kullandığı sayı ayrışır")
+
+    # ⛔ GÖRÜNTÜ DÜZELTİLMEMELİ — dedektör bozuk karelerle eğitildi
+    # ⛔ YORUMLARI AYIKLA: kaynakta bu adlar AÇIKLAMA olarak geçiyor
+    #   ("...KULLANILMAZ, çünkü..."). Bekçi GERÇEK ÇAĞRIYA bakmalı.
+    k = open(os.path.join(KOK, "dow", "gorus", "kamera.py"),
+             encoding="utf-8").read()
+    kod = "\n".join(satir for satir in k.split("\n")
+                    if not satir.lstrip().startswith("#"))
+    for yasak in ("undistortImage", "initUndistortRectifyMap", "cv2.remap"):
+        assert yasak not in kod, (
+            "görüntü düzeltiliyor (%s) — dedektörün eğitim dağılımı bozulur"
+            % yasak)

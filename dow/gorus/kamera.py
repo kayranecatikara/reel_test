@@ -108,6 +108,138 @@ HFOV_DEG = 2*math.degrees(math.atan(CX/F_PX))
 VFOV_DEG = 2*math.degrees(math.atan(CY/F_PX))
 
 
+# ============================================================================
+#  ⭐ BALIKGÖZ (FISHEYE) DİKİŞİ — 30 Ağu 2026
+#
+#  SİMDE YOKTU: oyun motorları (UE5) PERSPEKTİF, yani delikli iğne
+#  projeksiyonuyla render eder. Gerçek FPV merceği balıkgözdür ve iki
+#  şeyi birden bozar:
+#
+#   1. KERTERİZ. `atan(r/F_PX)` delikli iğnenin tersidir. Balıkgözde
+#      gerçek açı bambaşkadır. FOV'dan pinhole formülüyle türetilen
+#      F_PX yalnız KÖŞEDE doğrudur (formül oraya oturtulur); merkez
+#      civarında 1.76 KAT yanılır. Güdüm `yaw + 3.0·azimut` uyguladığı
+#      için bu, 38°'ye varan fazla yaw komutu demektir.
+#
+#   2. MENZİL. Kutu boyutu kadraj konumuna göre değişir. Eşuzaklık
+#      balıkgözde cisim kenarda TEĞET yönde uzar (radyal yönde aynı
+#      kalır); köşede köşegen ölçüsü %11 büyür -> menzil %10 yakın
+#      sanılır. Bu, kerteriz hatasının yanında küçüktür ama vardır.
+#
+#  ⛔ GÖRÜNTÜ DÜZELTİLMEZ (`cv2.fisheye.undistortImage` KULLANILMAZ):
+#     dedektör BOZUK karelerle eğitildi; düzeltilmiş kare onun eğitim
+#     dağılımının dışına çıkar ve tespit KÖTÜLEŞİR. Ayrıca her karede
+#     tam görüntü dönüşümü pahalıdır. Bize görüntü değil, İKİ SKALER
+#     EŞLEME lazım: piksel->açı ve kutu->menzil. İkisi de analitik.
+#
+#  MODELLER
+#    pinhole    : r = F_PX·tan θ          (VARSAYILAN — bit bit eski hâl)
+#    esuzaklik  : r = f·θ                 (tek parametre; FOV'dan çıkar)
+#    opencv     : r = f·θ(1+k₁θ²+k₂θ⁴+k₃θ⁶+k₄θ⁸)   (Kannala-Brandt)
+#                 OpenCV `cv2.fisheye.calibrate` tam bunu verir.
+#
+#  ⛔ VARSAYILAN `pinhole` — hiçbir DOW_OPTIK_MODEL verilmezse davranış
+#     BİREBİR eskisidir; `araclar/denklik.py` bunu doğrular.
+# ============================================================================
+OPTIK_MODEL = os.environ.get("DOW_OPTIK_MODEL", "pinhole").strip().lower()
+if OPTIK_MODEL not in ("pinhole", "esuzaklik", "opencv"):
+    raise ValueError("DOW_OPTIK_MODEL='%s' — pinhole | esuzaklik | opencv"
+                     % OPTIK_MODEL)
+
+#: balıkgöz odak (px/radyan). Verilmezse köşegen FOV'dan türetilir.
+_FBG_VAR = os.environ.get("DOW_OPTIK_FBG")
+if _FBG_VAR:
+    F_BG = float(_FBG_VAR)
+else:
+    # yarı_köşegen / (yarı_FOV radyan).  FOV verilmezse pinhole F_PX'ten
+    # eşdeğer köşegen FOV'a geçilir — kaba ama tutarlı bir başlangıç.
+    _fov_kos = os.environ.get("DOW_OPTIK_FOV_KOSEGEN")
+    _yari_kos = math.hypot(IMG_W, IMG_H) / 2.0
+    if _fov_kos:
+        F_BG = _yari_kos / math.radians(float(_fov_kos) / 2.0)
+    else:
+        F_BG = _yari_kos / math.atan(_yari_kos / F_PX)
+
+#: OpenCV fisheye bozulma katsayıları k1..k4 ("k1,k2,k3,k4")
+_D_VAR = os.environ.get("DOW_OPTIK_D", "")
+D_KATSAYI = ([float(x) for x in _D_VAR.replace(" ", "").split(",")]
+             if _D_VAR else [0.0, 0.0, 0.0, 0.0])
+if len(D_KATSAYI) != 4:
+    raise ValueError("DOW_OPTIK_D dört sayı olmalı: k1,k2,k3,k4")
+
+
+def _theta_d(th):
+    """Kannala-Brandt ileri eşleme: θ -> θ_d  (r = f·θ_d)."""
+    k1, k2, k3, k4 = D_KATSAYI
+    t2 = th * th
+    return th * (1.0 + t2 * (k1 + t2 * (k2 + t2 * (k3 + t2 * k4))))
+
+
+def _theta_d_turev(th):
+    """dθ_d/dθ — radyal yerel ölçek (merkezde 1)."""
+    k1, k2, k3, k4 = D_KATSAYI
+    t2 = th * th
+    return 1.0 + t2 * (3.0 * k1 + t2 * (5.0 * k2 + t2 * (7.0 * k3
+                                                         + t2 * 9.0 * k4)))
+
+
+def aci_yaricaptan(r_px):
+    """Piksel yarıçapı -> KAMERA EKSENİNDEN gerçek açı (radyan).
+
+    ⛔ Bu, güdümün nişan aldığı AÇIDIR. Yanlışsa uçak yanlış yöne döner.
+    """
+    if r_px <= 0.0:
+        return 0.0
+    if OPTIK_MODEL == "pinhole":
+        return math.atan(r_px / F_PX)
+    if OPTIK_MODEL == "esuzaklik":
+        return r_px / F_BG
+    # opencv: θ_d = r/f biliniyor, θ için Newton (birkaç adım yeter)
+    hedef = r_px / F_BG
+    th = hedef                      # k=0 iken tam çözüm
+    for _ in range(8):
+        f = _theta_d(th) - hedef
+        d = _theta_d_turev(th)
+        if abs(d) < 1e-12:
+            break
+        yeni = th - f / d
+        if abs(yeni - th) < 1e-10:
+            th = yeni
+            break
+        th = yeni
+    return max(0.0, th)
+
+
+def olcek_duzeltme(cx_px, cy_px):
+    """Kutu boyutunun MERKEZE GÖRE yerel ölçeği (köşegen ölçüsü için).
+
+    Menzil `R = C/boyut` ile hesaplanıyor ve `C` MERKEZDE kalibre edilir.
+    Kadrajın kenarında aynı cisim farklı piksel kaplar; düzeltme:
+
+        R_doğru = C · olcek_duzeltme(cx, cy) / boyut
+
+    Yerel ölçekler (merkeze göre):
+        radyal   = dθ_d/dθ
+        teğetsel = θ_d / sin θ
+    Köşegen ölçüsü ikisinin arasında; geometrik ortalama alınır.
+
+    ⚠ VARSAYIM: kutunun yönelimi bilinmiyor, izotropik yaklaşım yapılıyor.
+      Kenarda kutu radyal/teğet ayrımına duyarlıdır; hata ikinci derecedir.
+    """
+    if OPTIK_MODEL == "pinhole":
+        return 1.0                      # eski davranış — hiç dokunma
+    r = math.hypot(cx_px - CX, cy_px - CY)
+    if r <= 1e-6:
+        return 1.0
+    th = aci_yaricaptan(r)
+    if th <= 1e-9:
+        return 1.0
+    radyal = _theta_d_turev(th)
+    tegetsel = _theta_d(th) / math.sin(th)
+    kosegen = math.sqrt(max(1e-9, radyal * tegetsel))
+    return kosegen
+
+
 def menzil(kutu_genislik_px):
     """Kutu genişliğinden menzil (m). Delik-iğne benzer üçgenler: p = C/R."""
     if kutu_genislik_px <= 0:
@@ -118,8 +250,22 @@ def menzil(kutu_genislik_px):
 def piksel_aci(cx_px, cy_px):
     """Kadraj konumundan KAMERA EKSENİNE göre (yatay, dikey) açı (derece).
     dikey>0 = kamera ekseninin ÜSTÜNDE."""
-    return (math.degrees(math.atan((cx_px - CX)/F_PX)),
-            math.degrees(math.atan((CY - cy_px)/F_PX)))
+    dx, dy = (cx_px - CX), (CY - cy_px)
+    if OPTIK_MODEL == "pinhole":
+        # ⛔ ESKİ DAVRANIŞ — bit bit korunur
+        return (math.degrees(math.atan(dx / F_PX)),
+                math.degrees(math.atan(dy / F_PX)))
+    # ⭐ BALIKGÖZ: gerçek açı yarıçaptan çıkar, sonra bileşenlere ayrılır.
+    #   Yön (dx, dy) korunur; yalnız BÜYÜKLÜK doğru modelden gelir.
+    r = math.hypot(dx, dy)
+    if r <= 1e-9:
+        return (0.0, 0.0)
+    th = aci_yaricaptan(r)                     # gerçek açı (rad)
+    # Küre üstündeki yönü düzleme izdüşür: tan(θ) ölçeğiyle bileşenlere böl.
+    # Böylece küçük açıda eski davranışla sürekli, büyük açıda doğru olur.
+    t = math.tan(th)
+    return (math.degrees(math.atan(t * dx / r)),
+            math.degrees(math.atan(t * dy / r)))
 
 
 def piksel_kerteriz(cx_px, cy_px, own_pitch_deg, own_roll_deg=0.0):

@@ -221,7 +221,10 @@ def _durum():
             "boyut_min": _IBV.IbvsCfg.BOYUT_MIN_PX,
             "conf_min": _IBV.IbvsCfg.CONF_MIN,
             "f_px": _KAM.F_PX, "tilt": _KAM.TILT_DEG,
-            "w": _KAM.IMG_W, "h": _KAM.IMG_H}
+            "w": _KAM.IMG_W, "h": _KAM.IMG_H,
+            # ⭐ MERCEK MODELİ — panelde görünsün ki "hangi modelle
+            #   uçuyorum" sorusu ekrandan cevaplansın.
+            "mercek": _KAM.OPTIK_MODEL}
     except Exception:
         pass
     d["gorsel_aktif"] = bool(_D.get("gorsel_aktif"))

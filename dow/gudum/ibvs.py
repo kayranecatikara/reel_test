@@ -483,8 +483,13 @@ def komut(cx, cy, w, h, own_yaw_deg, own_pitch_deg, own_roll_deg,
 
     # --- 1) MENZİL: kutu boyutundan (benzer üçgenler, p = C/R) ---
     boyut, _C = olcu(w, h, cfg)
-    R = (_C / boyut) if boyut > 0 else None
+    # ⭐ BALIKGÖZ DÜZELTMESİ — `C` MERKEZDE kalibre edilir; kadrajın
+    #   kenarında aynı cisim farklı piksel kaplar. pinhole modelinde
+    #   çarpan 1.0'dır, yani davranış BİT BİT eskisidir.
+    _duz = KAM.olcek_duzeltme(cx, cy)
+    R = (_C * _duz / boyut) if boyut > 0 else None
     tani["ibvs_boyut_px"] = boyut
+    tani["ibvs_fe_duzeltme"] = round(_duz, 4)
     tani["ibvs_menzil_m"] = R if R else -1
 
     # --- 2) KERTERİZ: kadraj konumundan, KENDİ duruşumuz telafi edilerek ---
@@ -615,7 +620,9 @@ def gecerli(cx, cy, w, h, conf, cfg=IbvsCfg, son_w=None, son_yas=None):
     if conf < esik: return False, "conf"
     boyut, _C = olcu(w, h, cfg)
     if boyut < cfg.BOYUT_MIN_PX: return False, "boyut"
-    R = (_C / boyut) if boyut > 0 else None
+    # ⭐ KAPI da AYNI menzili görmeli — panelde yazan sayı ile kapının
+    #   kullandığı sayı ayrışırsa operatör "neden reddetti" diyemez.
+    R = (_C * KAM.olcek_duzeltme(cx, cy) / boyut) if boyut > 0 else None
     if R is None or R > cfg.MENZIL_MAX_M: return False, "menzil_uzak"
     if R < cfg.MENZIL_MIN_M:
         # ⭐ Ö-A TERMİNAL SÜREKLİLİK İSTİSNASI — bkz. IbvsCfg.TERMINAL_AKTIF.
